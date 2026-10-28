@@ -98,7 +98,7 @@ fun Transcript(
                 @JavascriptInterface fun onMath(tex: String) { post { cb.onMath(tex) } }
                 @JavascriptInterface fun openDrawer() { post { cb.onOpenDrawer() } }
             }, "Android")
-            loadUrl("$HOST/assets/web/chat.html")
+            loadUrl("$HOST/assets/web/chat.html" + if (reading.dark) "?dark=1" else "")
         }
     }
     DisposableEffect(Unit) { onDispose { webView.destroy() } }
