@@ -119,7 +119,7 @@ fun Context.shareText(text: String) {
 /** Things the chat screen asks the app shell to open. */
 interface ChatNavigator {
     fun openSettings()
-    fun openModelPicker(visionOnly: Boolean)
+    fun openModelPicker()
     fun openScanner()
     fun openAttachment(a: Attachment, editable: Boolean, messageId: String?)
     fun exportConversation(id: String)
@@ -179,11 +179,15 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
             }
             override fun onMath(tex: String) { mathTex = tex }
             override fun onCopy(text: String) { context.copyToClipboard(text) }
+            override fun onOpenDrawer() { scope.launch { drawer.open() } }
         }
     }
 
     ModalNavigationDrawer(
         drawerState = drawer,
+        // The drawer's own drag fights the transcript's vertical scroll; when closed it opens from the
+        // menu button or a clearly sideways swipe detected in the transcript instead.
+        gesturesEnabled = drawer.isOpen,
         drawerContent = {
             HistoryDrawer(
                 vm = vm,
@@ -200,7 +204,7 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
                 TopBar(
                     modelName = modelName,
                     onMenu = { scope.launch { drawer.open() } },
-                    onModel = { nav.openModelPicker(false) },
+                    onModel = { nav.openModelPicker() },
                     onNew = vm::newChat,
                     onSettings = nav::openSettings,
                 )
@@ -256,7 +260,7 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
             title = { Text(stringResource(R.string.no_image_title)) },
             text = { Text(stringResource(R.string.no_image_body, name)) },
             confirmButton = {
-                Button(onClick = { lacksImages = null; nav.openModelPicker(true) }) { Text(stringResource(R.string.pick_vision_model)) }
+                Button(onClick = { lacksImages = null; nav.openModelPicker() }) { Text(stringResource(R.string.pick_vision_model)) }
             },
             dismissButton = { TextButton(onClick = { lacksImages = null }) { Text(stringResource(R.string.cancel)) } },
         )

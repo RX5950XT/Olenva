@@ -114,6 +114,23 @@
     if (t.nodeType === 1 && t.matches(SCROLLERS)) edgeState(t);
   }, { capture: true, passive: true });
 
+  // A quick flick right opens history. Only a fast, clearly sideways flick counts, so scrolling or a slow
+  // sideways pan never opens it, and nothing started on a wide formula/table/code block does.
+  var sx = 0, sy = 0, st = 0, swipe = false;
+  document.addEventListener('touchstart', function (e) {
+    swipe = e.touches.length === 1;
+    if (!swipe) return;
+    sx = e.touches[0].clientX; sy = e.touches[0].clientY; st = e.timeStamp;
+    var s = e.target.closest && e.target.closest(SCROLLERS);
+    if (s && s.scrollWidth - s.clientWidth > 2) swipe = false;
+  }, { passive: true });
+  document.addEventListener('touchmove', function (e) {
+    if (!swipe) return;
+    var dx = e.touches[0].clientX - sx, dy = Math.abs(e.touches[0].clientY - sy);
+    if (dy > 24 || dx < -16 || e.timeStamp - st > 140) { swipe = false; return; }
+    if (dx > 100 && dx > 3 * dy) { swipe = false; bridge.openDrawer(); }
+  }, { passive: true });
+
   function flush() {
     rafPending = false;
     if (queued) { var q = queued; queued = null; apply(q); }

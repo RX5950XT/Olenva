@@ -58,8 +58,13 @@ object Orientation {
 
     private fun weight(l: Text.Line): Double = l.elements.sumOf { e ->
         val chars = e.text.count { !it.isWhitespace() }
-        // Confidence is 0 on some backends; then count characters alone.
-        chars * (if (e.confidence > 0f) e.confidence.toDouble() else 0.5)
+        // Confidence is 0 on some backends; then count characters alone. Low-confidence reads are garbage
+        // (handwritten math comes back as gibberish with a bogus 180° angle) and must not turn the page.
+        when {
+            e.confidence <= 0f -> chars * 0.5
+            e.confidence >= MIN_CONFIDENCE -> chars * e.confidence.toDouble()
+            else -> 0.0
+        }
     }
 
     private fun Bitmap.scaledTo(maxSide: Int): Bitmap {
@@ -69,4 +74,5 @@ object Orientation {
 
     private const val MIN_TEXT = 12.0
     private const val DOMINANCE = 0.6
+    private const val MIN_CONFIDENCE = 0.5f
 }

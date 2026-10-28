@@ -86,15 +86,12 @@ private val Ink = Color(0xFF14120F)
 private val Paper = Color(0xFFF6F1E7)
 private val Guide = Color(0xFFB9CDE6)
 
-val ENHANCE_MODES = listOf("auto", "original", "color", "gray", "bw")
+val ENHANCE_MODES = listOf("auto", "original")
 
 @Composable
 fun enhanceLabel(mode: String) = stringResource(
     when (mode) {
         "original" -> R.string.mode_original
-        "color" -> R.string.mode_color
-        "gray" -> R.string.mode_gray
-        "bw" -> R.string.mode_bw
         else -> R.string.mode_auto
     }
 )
@@ -170,7 +167,8 @@ fun AttachmentEditor(
                     Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    val activeMode = current.mode ?: "original"
+                    // Pages saved with the retired colour/gray/b&w modes render as auto now.
+                    val activeMode = if ((current.mode ?: "original") == "original") "original" else "auto"
                     ENHANCE_MODES.forEach { m ->
                         val on = m == activeMode
                         Text(

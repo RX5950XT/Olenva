@@ -9,7 +9,6 @@ import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
-import kotlin.math.abs
 import kotlin.math.max
 
 enum class ScanStatus { SEARCHING, DETECTED, HOLD, ADJUST, BLURRY, NEXT_PAGE, CAPTURING, PROCESSING }
@@ -38,6 +37,8 @@ class DocAnalyzer(
     private var lastSig: Mat? = null
     private var noDocSince = 0L
     private var stableSince = 0L
+    private val tracker = QuadTracker()
+    private var lastFrame = ScanFrame()
 
     /** Called after a capture (auto or manual) with the page that was taken. */
     @Synchronized fun disarm(sig: Mat?) {
@@ -68,12 +69,11 @@ class DocAnalyzer(
         try {
             if (paused) return
             val small = toSmallUpright(image)
-            val quad = DocDetector.detect(small)
+            val raw = DocDetector.detect(small)
             val frame = synchronized(this) {
                 latestSmall?.release()
                 latestSmall = small
-                latestQuad = quad
-                step(small, quad, SystemClock.uptimeMillis())
+                step(small, raw, SystemClock.uptimeMillis()).also { latestQuad = it.quad }
             }
             onFrame(frame.copy(frameW = small.cols(), frameH = small.rows()))
         } catch (e: Exception) {
@@ -99,7 +99,14 @@ class DocAnalyzer(
         return small
     }
 
-    private fun step(small: Mat, quad: Quad?, now: Long): ScanFrame {
+    private fun step(small: Mat, raw: Quad?, now: Long): ScanFrame {
+        val quad = tracker.update(raw, now)
+        // A frame without a detection (glare, motion blur) keeps the last outline and progress instead of blinking off.
+        if (quad != null && raw == null) return lastFrame.copy(quad = quad)
+        return judge(small, quad, now).also { lastFrame = it }
+    }
+
+    private fun judge(small: Mat, quad: Quad?, now: Long): ScanFrame {
         if (quad == null) {
             history.clear()
             stableSince = 0
@@ -125,7 +132,7 @@ class DocAnalyzer(
         }
         if (!auto) return ScanFrame(quad, status = ScanStatus.DETECTED)
 
-        val moved = history.maxOf { delta(it.second, quad) }
+        val moved = history.maxOf { QuadTracker.diff(it.second, quad) }
         val steady = moved < 0.025f && now - history.first().first >= 300
         if (!steady) {
             stableSince = 0
@@ -136,11 +143,12 @@ class DocAnalyzer(
             return ScanFrame(quad, status = ScanStatus.BLURRY)
         }
         if (stableSince == 0L) stableSince = now
-        val progress = ((now - stableSince) / 800f).coerceIn(0f, 1f)
+        val progress = ((now - stableSince) / 500f).coerceIn(0f, 1f)
         if (progress >= 1f) {
             disarm(DocDetector.signature(small, quad))
             stableSince = 0
             history.clear()
+            tracker.reset()
             paused = true
             onTrigger(quad)
             return ScanFrame(quad, status = ScanStatus.CAPTURING, progress = 1f)
@@ -149,6 +157,4 @@ class DocAnalyzer(
     }
 
     private fun touchesEdge(q: Quad) = q.any { it < 0.015f || it > 0.985f }
-
-    private fun delta(a: Quad, b: Quad) = (0 until 8).maxOf { abs(a[it] - b[it]) }
 }

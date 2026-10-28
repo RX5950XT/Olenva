@@ -46,6 +46,7 @@ interface TranscriptCallbacks {
     fun onImage(messageId: String, index: Int)
     fun onMath(tex: String)
     fun onCopy(text: String)
+    fun onOpenDrawer()
 }
 
 /** Renders messages in one WebView (markdown-it + KaTeX). Message actions come back through [callbacks]. */
@@ -95,6 +96,7 @@ fun Transcript(
                 @JavascriptInterface fun openImage(id: String, index: Int) { post { cb.onImage(id, index) } }
                 @JavascriptInterface fun openLink(url: String) { post { openExternal(context, url) } }
                 @JavascriptInterface fun onMath(tex: String) { post { cb.onMath(tex) } }
+                @JavascriptInterface fun openDrawer() { post { cb.onOpenDrawer() } }
             }, "Android")
             loadUrl("$HOST/assets/web/chat.html")
         }

@@ -88,10 +88,12 @@
     <!-- models -->
     <string name="choose_model">選擇模型</string>
     <string name="search_models">搜尋模型或提供商</string>
-    <string name="filter_vision">支援圖片</string>
     <string name="favorites">收藏</string>
-    <string name="recent">最近使用</string>
-    <string name="all_models">全部模型</string>
+    <string name="custom_models">自訂</string>
+    <string name="other_labs">其他開發商（%1$d）</string>
+    <string name="add_model_id">新增模型 ID</string>
+    <string name="model_id_help">格式：開發商/模型，與 OpenRouter 上的寫法相同</string>
+    <string name="add">新增</string>
     <string name="favorite">收藏</string>
     <string name="unfavorite">取消收藏</string>
     <string name="default_label">預設</string>
@@ -138,9 +140,6 @@
     <!-- editor -->
     <string name="mode_auto">自動增強</string>
     <string name="mode_original">原始彩色</string>
-    <string name="mode_color">文件彩色</string>
-    <string name="mode_gray">灰階</string>
-    <string name="mode_bw">黑白文件</string>
     <string name="crop">裁切</string>
     <string name="rotate">旋轉</string>
     <string name="crop_hint">拖曳四個角對齊文件邊緣</string>
@@ -223,7 +222,6 @@
     <string name="cam_crop_desc">沿文件邊界裁切並拉正透視</string>
     <string name="cam_enhance">自動增強影像</string>
     <string name="cam_enhance_desc">去陰影、提升對比與清晰度，保留原始照片可復原</string>
-    <string name="cam_mode">預設增強模式</string>
     <string name="cam_multi">預設多頁模式</string>
     <string name="cam_multi_desc">連續拍攝多頁，一次加入同一則訊息</string>
     <string name="cam_haptics">拍攝時震動回饋</string>

@@ -6,6 +6,7 @@ import android.util.Log
 import app.olenva.data.AppDatabase
 import app.olenva.data.AttachmentStore
 import app.olenva.data.Backup
+import app.olenva.scan.DocDetector
 import app.olenva.scan.Orientation
 import app.olenva.scan.ScanPipeline
 import app.olenva.data.SecretStore
@@ -33,6 +34,9 @@ class OlenvaApp : Application() {
         container.scope.launch { container.dao.markInterrupted() }
         System.loadLibrary("opencv_java4")
         Orientation.prewarm(this)
+        container.scope.launch {
+            runCatching { DocDetector.load(this@OlenvaApp) }.onFailure { Log.e("OlenvaApp", "document model failed to load", it) }
+        }
     }
 }
 

@@ -133,13 +133,6 @@ fun SettingsScreen(onClose: () -> Unit, onPickDefaultModel: () -> Unit, onDataCl
                 ToggleRow(R.string.cam_wide, R.string.cam_wide_desc, s.preferWide) { v -> update { it.copy(preferWide = v) } }
                 ToggleRow(R.string.cam_crop, R.string.cam_crop_desc, s.autoCrop) { v -> update { it.copy(autoCrop = v) } }
                 ToggleRow(R.string.cam_enhance, R.string.cam_enhance_desc, s.autoEnhance) { v -> update { it.copy(autoEnhance = v) } }
-                if (s.autoEnhance) {
-                    ChoiceRow(
-                        R.string.cam_mode,
-                        listOf("auto" to R.string.mode_auto, "color" to R.string.mode_color, "gray" to R.string.mode_gray, "bw" to R.string.mode_bw),
-                        s.enhanceMode,
-                    ) { v -> update { it.copy(enhanceMode = v) } }
-                }
                 ToggleRow(R.string.cam_multi, R.string.cam_multi_desc, s.multiPage) { v -> update { it.copy(multiPage = v) } }
                 ToggleRow(R.string.cam_haptics, null, s.haptics) { v -> update { it.copy(haptics = v) } }
                 ToggleRow(R.string.cam_sound, R.string.cam_sound_desc, s.shutterSound) { v -> update { it.copy(shutterSound = v) } }
@@ -260,6 +253,7 @@ private fun FontSizeRow(value: Float, onChange: (Float) -> Unit) {
                         override fun onImage(messageId: String, index: Int) {}
                         override fun onMath(tex: String) {}
                         override fun onCopy(text: String) {}
+                        override fun onOpenDrawer() {}
                     },
                     modifier = Modifier.fillMaxSize(),
                 )

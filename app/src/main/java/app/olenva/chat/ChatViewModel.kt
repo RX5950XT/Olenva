@@ -213,7 +213,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             val conv = conversation.value
             if (conv != null) dao.upsertConversation(conv.copy(modelId = id))
             else _pendingModel.value = id
-            c.settings.touchModel(id)
         }
     }
 
@@ -251,7 +250,6 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             dao.deleteDraft(cid)
             _draft.value = Draft()
             _scrollSignal.value++
-            c.settings.touchModel(modelId)
             generate(cid, modelId)
         }
     }

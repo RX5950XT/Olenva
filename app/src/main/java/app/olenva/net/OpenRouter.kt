@@ -13,6 +13,7 @@ import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.longOrNull
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -40,6 +41,8 @@ data class ModelInfo(
     val promptPrice: Double?,      // USD per token
     val completionPrice: Double?,
     val supportedParameters: List<String>,
+    val created: Long? = null,     // epoch seconds when OpenRouter listed it
+    val outputModalities: List<String> = emptyList(),
 ) {
     val supportsImages get() = "image" in inputModalities
     val supportsFiles get() = "file" in inputModalities
@@ -81,6 +84,8 @@ class OpenRouter(private val http: OkHttpClient = defaultClient()) {
                 promptPrice = pricing?.str("prompt")?.toDoubleOrNull()?.takeIf { it >= 0 },
                 completionPrice = pricing?.str("completion")?.toDoubleOrNull()?.takeIf { it >= 0 },
                 supportedParameters = o["supported_parameters"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+                created = o["created"]?.jsonPrimitive?.longOrNull,
+                outputModalities = arch?.get("output_modalities")?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
             )
         }.filter { it.id.isNotEmpty() }
 

@@ -1,108 +1,103 @@
 package app.olenva.scan
 
+import android.content.Context
 import android.graphics.Bitmap
 import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.MatOfByte
 import org.opencv.core.MatOfFloat
 import org.opencv.core.MatOfInt
-import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
 import org.opencv.core.Scalar
 import org.opencv.core.Size
+import org.opencv.dnn.Dnn
+import org.opencv.dnn.Net
 import org.opencv.imgproc.Imgproc
+import kotlin.math.abs
 import kotlin.math.hypot
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
+import kotlin.math.sqrt
 
 /** Quad corners as 8 normalized floats (x,y) in order TL, TR, BR, BL. */
 typealias Quad = FloatArray
 
 object DocDetector {
-    /** Finds the most plausible document outline in a small upright grayscale frame. */
-    fun detect(gray: Mat): Quad? {
-        val w = gray.cols().toDouble()
-        val h = gray.rows().toDouble()
-        val blur = Mat()
-        Imgproc.GaussianBlur(gray, blur, Size(5.0, 5.0), 0.0)
-        try {
-            val m = Core.mean(blur).`val`[0]
-            val edges = Mat()
-            Imgproc.Canny(blur, edges, max(10.0, 0.5 * m), min(255.0, 1.2 * m + 20))
-            Imgproc.dilate(edges, edges, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0)), Point(-1.0, -1.0), 2)
-            var quad = bestQuad(edges, w * h)
-            edges.release()
-            if (quad == null) {
-                // Paper is usually the brightest large region: fall back to Otsu segmentation,
-                // but only trust it when the region really stands out from what surrounds it.
-                val bin = Mat()
-                Imgproc.threshold(blur, bin, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
-                Imgproc.morphologyEx(bin, bin, Imgproc.MORPH_CLOSE, Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(9.0, 9.0)))
-                quad = bestQuad(bin, w * h)?.takeIf { contrasts(blur, bin) }
-                bin.release()
-            }
-            return quad?.let { normalize(it, w, h) }?.takeIf { !fillsFrame(it) }
-        } finally {
-            blur.release()
+    private const val MODEL = "docaligner_lcnet100.onnx"
+    private const val IN = 256.0
+    private const val HM = 128
+    private const val PEAK = 0.3f
+    @Volatile private var net: Net? = null
+
+    /** Loads the corner model (DocAligner, see third_party/DocAligner). Until it is ready, nothing is detected. */
+    fun load(context: Context) {
+        val bytes = context.assets.open(MODEL).use { it.readBytes() }
+        net = Dnn.readNetFromONNX(MatOfByte(*bytes))
+            // FP16 is ~25% faster on the phone; heatmaps differ by ~0.001, far below the 0.3 peak cut.
+            .apply { setPreferableTarget(Dnn.DNN_TARGET_CPU_FP16) }
+    }
+
+    /**
+     * Finds the page in an upright grayscale frame. A small heatmap network predicts each corner, which copes with
+     * clutter, hands and low contrast far better than edge contours.
+     */
+    @Synchronized fun detect(gray: Mat): Quad? {
+        val n = net ?: return null
+        val input = Mat()
+        Imgproc.resize(gray, input, Size(IN, IN), 0.0, 0.0, Imgproc.INTER_AREA)
+        Imgproc.cvtColor(input, input, Imgproc.COLOR_GRAY2RGB)
+        val blob = Dnn.blobFromImage(input, 1 / 255.0)
+        input.release()
+        n.setInput(blob)
+        // Measured on Pixel 6a: 2 threads ≈ 50 ms idle / 78 ms while previewing, the default 8 ≈ 130 / 100 ms (syncing with the little cores dominates).
+        Core.setNumThreads(2)
+        val out = try { n.forward() } finally { Core.setNumThreads(-1) }
+        blob.release()
+        val hm = FloatArray(4 * HM * HM)
+        out.reshape(1, intArrayOf(1, hm.size)).run { get(0, 0, hm); release() }
+        out.release()
+        return decode(hm)
+    }
+
+    /** Heatmaps (4 × 128 × 128, TL/TR/BR/BL) → ordered quad, or null when a corner is missing or the shape is implausible. */
+    fun decode(hm: FloatArray): Quad? {
+        val pts = Array(4) { corner(hm, it) ?: return null }
+        val q = order(pts).let { p -> FloatArray(8) { i -> (if (i % 2 == 0) p[i / 2].x else p[i / 2].y).toFloat() } }
+        return q.takeIf { convex(it) && area(it) > 0.04f }
+    }
+
+    /** Weighted centre of the strongest peak; a 7×7 window matches the reference largest-blob centroid. */
+    private fun corner(hm: FloatArray, k: Int): Point? {
+        val off = k * HM * HM
+        var best = off
+        for (i in off until off + HM * HM) if (hm[i] > hm[best]) best = i
+        if (hm[best] < PEAK) return null
+        val by = (best - off) / HM
+        val bx = (best - off) % HM
+        var sw = 0.0; var sx = 0.0; var sy = 0.0
+        for (y in max(0, by - 3)..min(HM - 1, by + 3)) for (x in max(0, bx - 3)..min(HM - 1, bx + 3)) {
+            val v = hm[off + y * HM + x]
+            if (v >= PEAK) { sw += v; sx += v * x; sy += v * y }
         }
+        return Point((sx / sw + 0.5) / HM, (sy / sw + 0.5) / HM)
     }
 
-    private fun bestQuad(bin: Mat, frameArea: Double): Array<Point>? {
-        val contours = ArrayList<MatOfPoint>()
-        val hierarchy = Mat()
-        Imgproc.findContours(bin, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
-        hierarchy.release()
-        val ranked = contours.map { it to Imgproc.contourArea(it) }.sortedByDescending { it.second }.take(5)
-        var result: Array<Point>? = null
-        for ((c, area) in ranked) {
-            if (area < 0.12 * frameArea) break
-            val c2f = MatOfPoint2f(*c.toArray())
-            val peri = Imgproc.arcLength(c2f, true)
-            // Try tight → loose approximation; the hull handles slightly curved book pages.
-            val hull = MatOfInt()
-            Imgproc.convexHull(c, hull)
-            val pts = c.toArray()
-            val hullPts = MatOfPoint2f(*hull.toArray().map { pts[it] }.toTypedArray())
-            for ((src, eps) in listOf(c2f to 0.02, hullPts to 0.02, hullPts to 0.04, hullPts to 0.06)) {
-                val approx = MatOfPoint2f()
-                Imgproc.approxPolyDP(src, approx, eps * peri, true)
-                val p = approx.toArray()
-                approx.release()
-                if (p.size == 4 && Imgproc.isContourConvex(MatOfPoint(*p)) && Imgproc.contourArea(MatOfPoint(*p)) > 0.12 * frameArea) {
-                    result = order(p)
-                    break
-                }
-            }
-            c2f.release(); hull.release(); hullPts.release()
-            if (result != null) break
-            if (area > 0.25 * frameArea) {
-                val rect = Imgproc.minAreaRect(MatOfPoint2f(*c.toArray()))
-                val p = arrayOfNulls<Point>(4).also { rect.points(it) }.requireNoNulls()
-                result = order(p)
-                break
-            }
-        }
-        contours.forEach { it.release() }
-        return result
+    private fun cross(q: Quad, i: Int): Float {
+        val a = i * 2; val b = (i + 1) % 4 * 2; val c = (i + 2) % 4 * 2
+        return (q[b] - q[a]) * (q[c + 1] - q[b + 1]) - (q[b + 1] - q[a + 1]) * (q[c] - q[b])
     }
 
-    private fun contrasts(gray: Mat, mask: Mat): Boolean {
-        val inside = Core.mean(gray, mask).`val`[0]
-        val inv = Mat()
-        Core.bitwise_not(mask, inv)
-        val outside = if (Core.countNonZero(inv) > 0) Core.mean(gray, inv).`val`[0] else 0.0
-        inv.release()
-        return inside - outside > 25
-    }
+    private fun convex(q: Quad) = (0 until 4).all { cross(q, it) > 0 }
 
-    /** All four corners on the frame border means we "found" the frame itself, not a page. */
-    private fun fillsFrame(q: Quad) = (0 until 4).all { i ->
-        val x = q[i * 2]; val y = q[i * 2 + 1]
-        x < 0.03f || x > 0.97f || y < 0.03f || y > 0.97f
-    }
+    /** Shoelace area as a fraction of the frame. */
+    private fun area(q: Quad) = abs((0 until 4).sumOf { i ->
+        val j = (i + 1) % 4
+        (q[i * 2] * q[j * 2 + 1] - q[j * 2] * q[i * 2 + 1]).toDouble()
+    }).toFloat() / 2
 
     fun order(p: Array<Point>): Array<Point> {
         val tl = p.minBy { it.x + it.y }
@@ -111,9 +106,6 @@ object DocDetector {
         val bl = p.maxBy { it.y - it.x }
         return arrayOf(tl, tr, br, bl)
     }
-
-    private fun normalize(p: Array<Point>, w: Double, h: Double): Quad =
-        FloatArray(8) { i -> if (i % 2 == 0) (p[i / 2].x / w).toFloat() else (p[i / 2].y / h).toFloat() }
 
     /** Variance of the Laplacian: low means blurry. */
     fun sharpness(gray: Mat): Double {
@@ -166,8 +158,13 @@ object DocProcessor {
     fun warp(bmp: Bitmap, q: Quad): Bitmap {
         val w = bmp.width.toDouble(); val h = bmp.height.toDouble()
         val p = Array(4) { Point(q[it * 2] * w, q[it * 2 + 1] * h) }
-        val outW = max(dist(p[0], p[1]), dist(p[3], p[2]))
-        val outH = max(dist(p[0], p[3]), dist(p[1], p[2]))
+        var outW = max(dist(p[0], p[1]), dist(p[3], p[2]))
+        var outH = max(dist(p[0], p[3]), dist(p[1], p[2]))
+        // Edge lengths squash a page shot at a low angle; recover its real proportions from the perspective.
+        aspect(p, w, h)?.let { r ->
+            val long = max(outW, outH)
+            if (r < 1) { outH = long; outW = long * r } else { outW = long; outH = long / r }
+        }
         val s = min(1.0, MAX_SIDE / max(outW, outH))
         val ow = max(16.0, outW * s).roundToInt().toDouble()
         val oh = max(16.0, outH * s).roundToInt().toDouble()
@@ -204,55 +201,32 @@ object DocProcessor {
         val ch = ArrayList<Mat>()
         Core.split(lab, ch)
         lab.release()
-        val l = normalizeIllumination(ch[0])
+        // Fine background tracking follows shadows and paper creases; filled areas are still kept.
+        val l = normalizeIllumination(ch[0], 30)
         ch[0].release()
 
-        val out: Mat = when (mode) {
-            "bw" -> {
-                val block = (min(l.cols(), l.rows()) / 40).coerceIn(15, 61) or 1
-                val bw = Mat()
-                Imgproc.adaptiveThreshold(l, bw, 255.0, Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C, Imgproc.THRESH_BINARY, block, 12.0)
-                // Adaptive thresholding alone hollows out solid fills; on the illumination-normalized image a
-                // global cut keeps them dark while the adaptive pass still catches faint strokes.
-                val global = Mat()
-                Imgproc.threshold(l, global, 140.0, 255.0, Imgproc.THRESH_BINARY)
-                Core.bitwise_and(bw, global, bw)
-                global.release()
-                Imgproc.cvtColor(bw, bw, Imgproc.COLOR_GRAY2RGBA)
-                bw
-            }
-            "gray" -> {
-                stretch(l, 1.0, 99.0)
-                unsharp(l, 0.6)
-                Mat().also { Imgproc.cvtColor(l, it, Imgproc.COLOR_GRAY2RGBA) }
-            }
-            else -> {
-                if (mode == "color") stretch(l, 2.0, 92.0) else stretch(l, 0.5, 99.5)
-                unsharp(l, if (mode == "color") 0.7 else 0.5)
-                // Chroma noise lives in a/b; smoothing it there leaves stroke detail (in L) untouched.
-                Imgproc.GaussianBlur(ch[1], ch[1], Size(5.0, 5.0), 0.0)
-                Imgproc.GaussianBlur(ch[2], ch[2], Size(5.0, 5.0), 0.0)
-                if (mode == "color") {
-                    ch[1].convertTo(ch[1], -1, 1.15, -128 * 0.15)
-                    ch[2].convertTo(ch[2], -1, 1.15, -128 * 0.15)
-                }
-                val merged = Mat()
-                Core.merge(listOf(l, ch[1], ch[2]), merged)
-                Imgproc.cvtColor(merged, merged, Imgproc.COLOR_Lab2RGB)
-                Imgproc.cvtColor(merged, merged, Imgproc.COLOR_RGB2RGBA)
-                merged
-            }
-        }
+        // Every other mode is "auto": levels and paper colour adapt per page and per region, so coloured ink keeps
+        // its colour while plain black ink and paper come out neutral.
+        autoLevels(l)
+        unsharp(l, 0.6)
+        // Chroma noise lives in a/b; smoothing it there leaves stroke detail (in L) untouched.
+        Imgproc.GaussianBlur(ch[1], ch[1], Size(5.0, 5.0), 0.0)
+        Imgproc.GaussianBlur(ch[2], ch[2], Size(5.0, 5.0), 0.0)
+        whitenPaper(l, ch[1], ch[2])
+        val out = Mat()
+        Core.merge(listOf(l, ch[1], ch[2]), out)
+        Imgproc.cvtColor(out, out, Imgproc.COLOR_Lab2RGB)
+        Imgproc.cvtColor(out, out, Imgproc.COLOR_RGB2RGBA)
         ch.forEach { it.release() }
         l.release()
         return out.toBitmap()
     }
 
-    private fun normalizeIllumination(l: Mat): Mat {
+    private fun normalizeIllumination(l: Mat, kDiv: Int): Mat {
         val small = Mat()
         val f = 0.25
         Imgproc.resize(l, small, Size(), f, f, Imgproc.INTER_AREA)
-        val k = (max(small.cols(), small.rows()) / 18).coerceAtLeast(9) or 1
+        val k = (max(small.cols(), small.rows()) / kDiv).coerceAtLeast(9) or 1
         Imgproc.morphologyEx(small, small, Imgproc.MORPH_CLOSE, Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(k.toDouble(), k.toDouble())))
         Imgproc.medianBlur(small, small, 5)
         val bg = Mat()
@@ -309,11 +283,77 @@ object DocProcessor {
         return out
     }
 
-    private fun stretch(m: Mat, loPct: Double, hiPct: Double) {
-        val lo = percentile(m, loPct)
-        val hi = max(percentile(m, hiPct), lo + 40)
-        val a = 255.0 / (hi - lo)
-        m.convertTo(m, -1, a, -lo * a)
+    /**
+     * Paper to pure white and ink to black. The white point sits just below the paper's own noise (cleaner background on
+     * grainy paper, faint strokes kept on clean paper); the black point follows the ink nearby, because writing far
+     * from the lens in a low-angle shot is blurrier and greyer than the rest. Gamma 2 deepens pencil and pen.
+     * The local black only applies where ink sits on paper nearby: in a shadow or blank area it would stretch paper
+     * grain into speckles.
+     */
+    private fun autoLevels(m: Mat) {
+        val med = percentile(m, 50.0)
+        val sigma = max((med - percentile(m, 25.0)) / 0.674, 1.0)
+        val white = (med - 3 * sigma).coerceIn(225.0, 250.0)
+        val globalBlack = min(percentile(m, 0.5), 120.0)
+        val k = max(15, max(m.cols(), m.rows()) / 40) or 1
+        val small = Mat()
+        Imgproc.resize(m, small, Size(), 0.25, 0.25, Imgproc.INTER_AREA)
+        small.convertTo(small, CvType.CV_32F)
+        val ks = ((k / 4) or 1).toDouble()
+        val win = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(ks, ks))
+        val ink = Mat(); val paper = Mat()
+        Imgproc.erode(small, ink, win)
+        Imgproc.dilate(small, paper, win)
+        small.release()
+        // gate = clamp((paper − ink − 40) / 40): 0 with no contrast nearby, 1 around real strokes.
+        val gate = Mat()
+        Core.subtract(paper, ink, gate)
+        gate.convertTo(gate, -1, 1 / 40.0, -1.0)
+        Core.min(gate, Scalar(1.0), gate)
+        Core.max(gate, Scalar(0.0), gate)
+        paper.release()
+        // local black = globalBlack + gate · (clamp(ink, globalBlack, 190) − globalBlack)
+        Core.max(ink, Scalar(globalBlack), ink)
+        Core.min(ink, Scalar(190.0), ink)
+        Core.subtract(ink, Scalar(globalBlack), ink)
+        Core.multiply(ink, gate, ink)
+        Core.add(ink, Scalar(globalBlack), ink)
+        gate.release()
+        Imgproc.GaussianBlur(ink, ink, Size(0.0, 0.0), k / 8.0)
+        val black = Mat()
+        Imgproc.resize(ink, black, m.size(), 0.0, 0.0, Imgproc.INTER_LINEAR)
+        ink.release()
+        val t = Mat()
+        m.convertTo(t, CvType.CV_32F)
+        Core.subtract(t, black, t)
+        black.convertTo(black, -1, -1.0, white)          // white − black
+        Core.divide(t, black, t)
+        black.release()
+        Core.min(t, Scalar(1.0), t)
+        Core.max(t, Scalar(0.0), t)
+        Core.pow(t, 2.0, t)
+        t.convertTo(m, CvType.CV_8U, 255.0)
+        t.release()
+    }
+
+    /** Neutral white page: remove the paper's colour cast, then fade chroma out on near-white so only ink keeps colour. */
+    private fun whitenPaper(l: Mat, a: Mat, b: Mat) {
+        val paper = Mat()
+        Core.compare(l, Scalar(250.0), paper, Core.CMP_GE)
+        val keep = Mat()
+        l.convertTo(keep, CvType.CV_32F, -1.2 / 80, 1.2 * 250 / 80)   // 1.2 · clamp((250 − L) / 80)
+        Core.min(keep, Scalar(1.2), keep)
+        Core.max(keep, Scalar(0.0), keep)
+        val hasPaper = Core.countNonZero(paper) > 0
+        for (c in listOf(a, b)) {
+            val cast = if (hasPaper) Core.mean(c, paper).`val`[0] - 128 else 0.0
+            val f = Mat()
+            c.convertTo(f, CvType.CV_32F, 1.0, -128 - cast)
+            Core.multiply(f, keep, f)
+            f.convertTo(c, CvType.CV_8U, 1.0, 128.0)
+            f.release()
+        }
+        paper.release(); keep.release()
     }
 
     private fun unsharp(m: Mat, amount: Double) {
@@ -337,6 +377,40 @@ object DocProcessor {
     }
 
     private fun dist(a: Point, b: Point) = hypot(a.x - b.x, a.y - b.y)
+
+    /**
+     * Width/height of the real rectangle behind corners TL, TR, BR, BL in a [w]×[h] photo (Zhang & He, "Whiteboard
+     * scanning", 2007). The focal length comes from the corners when they pin it down; when a pair of sides is
+     * parallel in the photo (phone tilted straight forward) they cannot, and a typical value is assumed.
+     */
+    fun aspect(p: Array<Point>, w: Double, h: Double): Double? {
+        val u0 = w / 2; val v0 = h / 2
+        fun v(pt: Point) = doubleArrayOf(pt.x, pt.y, 1.0)
+        val m1 = v(p[0]); val m2 = v(p[1]); val m3 = v(p[3]); val m4 = v(p[2])
+        val k2 = dot(cross(m1, m4), m3) / dot(cross(m2, m4), m3)
+        val k3 = dot(cross(m1, m4), m2) / dot(cross(m3, m4), m2)
+        val n2 = DoubleArray(3) { k2 * m2[it] - m1[it] }
+        val n3 = DoubleArray(3) { k3 * m3[it] - m1[it] }
+        if (!k2.isFinite() || !k3.isFinite()) return null
+        val long = max(w, h)
+        val f2 = if (abs(n2[2]) < 1e-6 || abs(n3[2]) < 1e-6) -1.0 else
+            -((n2[0] * n3[0] - (n2[0] * n3[2] + n2[2] * n3[0]) * u0 + n2[2] * n3[2] * u0 * u0) +
+                (n2[1] * n3[1] - (n2[1] * n3[2] + n2[2] * n3[1]) * v0 + n2[2] * n3[2] * v0 * v0)) / (n2[2] * n3[2])
+        // shortcut: fallback focal 0.55 × long side matches the default 0.6× wide lens (measured 0.51–0.53 on a Pixel 6a);
+        // pass the real zoom from the scanner if 1× shots come out stretched.
+        val f = (if (f2 > 0) sqrt(f2) else 0.0).takeIf { it in 0.3 * long..1.5 * long } ?: (0.55 * long)
+        // nᵀ (A⁻ᵀA⁻¹) n with A = [[f,0,u0],[0,f,v0],[0,0,1]]
+        fun q(n: DoubleArray): Double {
+            val x = (n[0] - u0 * n[2]) / f; val y = (n[1] - v0 * n[2]) / f
+            return x * x + y * y + n[2] * n[2]
+        }
+        return sqrt(q(n2) / q(n3)).takeIf { it.isFinite() && it in 0.25..4.0 }
+    }
+
+    private fun cross(a: DoubleArray, b: DoubleArray) =
+        doubleArrayOf(a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0])
+
+    private fun dot(a: DoubleArray, b: DoubleArray) = a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
 
     private fun Mat.toBitmap(): Bitmap {
         val b = Bitmap.createBitmap(cols(), rows(), Bitmap.Config.ARGB_8888)

@@ -88,10 +88,12 @@
     <!-- models -->
     <string name="choose_model">Choose model</string>
     <string name="search_models">Search models or providers</string>
-    <string name="filter_vision">Accepts images</string>
     <string name="favorites">Favorites</string>
-    <string name="recent">Recent</string>
-    <string name="all_models">All models</string>
+    <string name="custom_models">Custom</string>
+    <string name="other_labs">Other labs (%1$d)</string>
+    <string name="add_model_id">Add model ID</string>
+    <string name="model_id_help">Format: lab/model, as listed on OpenRouter</string>
+    <string name="add">Add</string>
     <string name="favorite">Favorite</string>
     <string name="unfavorite">Remove favorite</string>
     <string name="default_label">default</string>
@@ -138,9 +140,6 @@
     <!-- editor -->
     <string name="mode_auto">Auto enhance</string>
     <string name="mode_original">Original</string>
-    <string name="mode_color">Document color</string>
-    <string name="mode_gray">Grayscale</string>
-    <string name="mode_bw">Black &amp; white</string>
     <string name="crop">Crop</string>
     <string name="rotate">Rotate</string>
     <string name="crop_hint">Drag the four corners to the page edges</string>
@@ -223,7 +222,6 @@
     <string name="cam_crop_desc">Crop to the page edges and correct perspective</string>
     <string name="cam_enhance">Auto enhance</string>
     <string name="cam_enhance_desc">Remove shadows, boost contrast and clarity; the original is kept</string>
-    <string name="cam_mode">Default enhancement</string>
     <string name="cam_multi">Multi-page by default</string>
     <string name="cam_multi_desc">Capture several pages into one message</string>
     <string name="cam_haptics">Vibrate on capture</string>

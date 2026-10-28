@@ -14,6 +14,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 const val DEFAULT_MODEL = "google/gemini-3.8-flash"
@@ -26,7 +27,7 @@ data class AppSettings(
     val lastConversationId: String? = null,
     val defaultModel: String = DEFAULT_MODEL,
     val favorites: List<String> = emptyList(),
-    val recents: List<String> = emptyList(),
+    val customModels: List<String> = emptyList(),
     val temperature: Float? = null,
     val topP: Float? = null,
     val maxTokens: Int? = null,
@@ -37,7 +38,6 @@ data class AppSettings(
     val preferWide: Boolean = true,
     val autoCrop: Boolean = true,
     val autoEnhance: Boolean = true,
-    val enhanceMode: String = "auto",       // auto | original | color | gray | bw
     val multiPage: Boolean = false,
     val haptics: Boolean = true,
     val shutterSound: Boolean = false,
@@ -54,7 +54,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val lastConversation = stringPreferencesKey("lastConversation")
         val defaultModel = stringPreferencesKey("defaultModel")
         val favorites = stringPreferencesKey("favorites")
-        val recents = stringPreferencesKey("recents")
+        val customModels = stringPreferencesKey("customModels")
         val temperature = floatPreferencesKey("temperature")
         val topP = floatPreferencesKey("topP")
         val maxTokens = intPreferencesKey("maxTokens")
@@ -65,7 +65,6 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val preferWide = booleanPreferencesKey("preferWide")
         val autoCrop = booleanPreferencesKey("autoCrop")
         val autoEnhance = booleanPreferencesKey("autoEnhance")
-        val enhanceMode = stringPreferencesKey("enhanceMode")
         val multiPage = booleanPreferencesKey("multiPage")
         val haptics = booleanPreferencesKey("haptics")
         val shutterSound = booleanPreferencesKey("shutterSound")
@@ -80,7 +79,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             lastConversationId = this[K.lastConversation],
             defaultModel = this[K.defaultModel] ?: d.defaultModel,
             favorites = this[K.favorites].toList(),
-            recents = this[K.recents].toList(),
+            customModels = this[K.customModels].toList(),
             temperature = this[K.temperature],
             topP = this[K.topP],
             maxTokens = this[K.maxTokens],
@@ -91,7 +90,6 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             preferWide = this[K.preferWide] ?: d.preferWide,
             autoCrop = this[K.autoCrop] ?: d.autoCrop,
             autoEnhance = this[K.autoEnhance] ?: d.autoEnhance,
-            enhanceMode = this[K.enhanceMode] ?: d.enhanceMode,
             multiPage = this[K.multiPage] ?: d.multiPage,
             haptics = this[K.haptics] ?: d.haptics,
             shutterSound = this[K.shutterSound] ?: d.shutterSound,
@@ -106,6 +104,13 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
     val settings: StateFlow<AppSettings> =
         context.dataStore.data.map { it.toSettings() }.stateIn(scope, SharingStarted.Eagerly, initial)
 
+    init {
+        // Drop what older versions stored for retired settings (recent models, per-page enhance mode).
+        scope.launch {
+            context.dataStore.edit { p -> listOf("recents", "enhanceMode").forEach { p.remove(stringPreferencesKey(it)) } }
+        }
+    }
+
     suspend fun update(block: (AppSettings) -> AppSettings) {
         context.dataStore.edit { p ->
             val s = block(p.toSettings())
@@ -116,7 +121,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             s.lastConversationId?.let { p[K.lastConversation] = it } ?: p.remove(K.lastConversation)
             p[K.defaultModel] = s.defaultModel
             p[K.favorites] = s.favorites.joinToString("\n")
-            p[K.recents] = s.recents.joinToString("\n")
+            p[K.customModels] = s.customModels.joinToString("\n")
             s.temperature?.let { p[K.temperature] = it } ?: p.remove(K.temperature)
             s.topP?.let { p[K.topP] = it } ?: p.remove(K.topP)
             s.maxTokens?.let { p[K.maxTokens] = it } ?: p.remove(K.maxTokens)
@@ -127,14 +132,9 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             p[K.preferWide] = s.preferWide
             p[K.autoCrop] = s.autoCrop
             p[K.autoEnhance] = s.autoEnhance
-            p[K.enhanceMode] = s.enhanceMode
             p[K.multiPage] = s.multiPage
             p[K.haptics] = s.haptics
             p[K.shutterSound] = s.shutterSound
         }
-    }
-
-    suspend fun touchModel(id: String) = update { s ->
-        s.copy(recents = (listOf(id) + s.recents.filter { it != id }).take(8))
     }
 }

@@ -100,7 +100,7 @@ private fun Root(vm: ChatViewModel) {
     val scope = rememberCoroutineScope()
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var scannerOpen by rememberSaveable { mutableStateOf(false) }
-    var picker by remember { mutableStateOf<Pair<Boolean, Boolean>?>(null) }   // (forDefault, visionOnly)
+    var picker by remember { mutableStateOf<Boolean?>(null) }   // forDefault
     var editor by remember { mutableStateOf<EditorTarget?>(null) }
     var exportId by remember { mutableStateOf<String?>(null) }
     var pendingExport by remember { mutableStateOf<String?>(null) }
@@ -136,7 +136,7 @@ private fun Root(vm: ChatViewModel) {
     val nav = remember {
         object : ChatNavigator {
             override fun openSettings() { settingsOpen = true }
-            override fun openModelPicker(visionOnly: Boolean) { picker = false to visionOnly }
+            override fun openModelPicker() { picker = false }
             override fun openScanner() { scannerOpen = true }
             override fun openAttachment(a: Attachment, editable: Boolean, messageId: String?) { editor = EditorTarget(a, editable) }
             override fun exportConversation(id: String) { exportId = id }
@@ -148,7 +148,7 @@ private fun Root(vm: ChatViewModel) {
     if (settingsOpen) {
         SettingsScreen(
             onClose = { settingsOpen = false },
-            onPickDefaultModel = { picker = true to false },
+            onPickDefaultModel = { picker = true },
             onDataCleared = { vm.newChat() },
         )
     }
@@ -160,10 +160,9 @@ private fun Root(vm: ChatViewModel) {
             onEditPage = { a, cb -> editor = EditorTarget(a, true, cb) },
         )
     }
-    picker?.let { (forDefault, visionOnly) ->
+    picker?.let { forDefault ->
         ModelPicker(
             currentId = if (forDefault) settings.defaultModel else modelId,
-            visionOnlyInitially = visionOnly,
             title = stringResource(if (forDefault) R.string.default_model else R.string.choose_model),
             onPick = { id ->
                 if (forDefault) scope.launch { c.settings.update { it.copy(defaultModel = id) } } else vm.selectModel(id)

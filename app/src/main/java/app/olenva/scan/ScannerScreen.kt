@@ -228,7 +228,7 @@ private fun CameraContent(
                 analyzer.paused = false
                 scope.launch {
                     try {
-                        val mode = if (settings.autoEnhance) settings.enhanceMode else "original"
+                        val mode = if (settings.autoEnhance) "auto" else "original"
                         val a = pipeline.fromCapture(upright, hint, settings.autoCrop, mode)
                         val idx = retakeIndex
                         when {
