@@ -42,7 +42,8 @@ object DocDetector {
         // per frame, the default 8 ≈ 130 ms (syncing with the little cores dominates).
         Core.setNumThreads(THREADS)
         net = Dnn.readNetFromONNX(MatOfByte(*bytes))
-            // FP16 is ~25% faster on the phone; heatmaps differ by ~0.001, far below the 0.3 peak cut.
+            // On Android this currently falls back to FP32: OpenCV 4.13 gates CPU_FP16 on the Apple-only `__arm64__`
+            // macro (both the official and the slim build log "fall back to DNN_TARGET_CPU").
             .apply { setPreferableTarget(Dnn.DNN_TARGET_CPU_FP16) }
     }
 

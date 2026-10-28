@@ -54,6 +54,7 @@ sealed interface UiEvent {
     data class Toast(val message: String) : UiEvent
     data object NeedApiKey : UiEvent
     data class ModelLacksImages(val modelName: String) : UiEvent
+    data object Attached : UiEvent
 }
 
 @OptIn(ExperimentalCoroutinesApi::class, FlowPreview::class)
@@ -183,6 +184,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
             addAttachments(ok)
+            if (ok.isNotEmpty()) _events.tryEmit(UiEvent.Attached)
         }
     }
 

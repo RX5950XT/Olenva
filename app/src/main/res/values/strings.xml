@@ -226,7 +226,7 @@
     <string name="clear_cache_desc">Remove temporary images no conversation uses</string>
     <string name="cache_cleared">Cleared</string>
     <string name="export_all">Export all data</string>
-    <string name="export_all_desc">All conversations and attachments as a .zip; the API key only if you tick it</string>
+    <string name="export_all_desc">All conversations, attachments and settings as a .zip; the API key only if you tick it</string>
     <string name="import_backup">Import backup</string>
     <string name="import_done">Imported %1$d conversations</string>
     <string name="import_done_key">Imported %1$d conversations and restored the API key</string>

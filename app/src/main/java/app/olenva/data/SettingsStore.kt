@@ -1,6 +1,7 @@
 package app.olenva.data
 
 import android.content.Context
+import app.olenva.settings.isValidModelId
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -16,10 +17,12 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.Serializable
 
 const val DEFAULT_MODEL = "google/gemini-3.8-flash"
 val EFFORTS = listOf("low", "medium", "high")
 
+@Serializable
 data class AppSettings(
     val theme: String = "system",          // system | light | dark
     val fontScale: Float = 1f,
@@ -41,6 +44,23 @@ data class AppSettings(
     val multiPage: Boolean = false,
     val haptics: Boolean = true,
 )
+
+/** Settings read from a backup file are untrusted: anything out of range falls back to the default. */
+fun AppSettings.sanitized(): AppSettings {
+    val d = AppSettings()
+    return copy(
+        theme = theme.takeIf { it in listOf("system", "light", "dark") } ?: d.theme,
+        fontScale = fontScale.takeIf { it in 0.8f..1.6f } ?: d.fontScale,
+        startup = startup.takeIf { it in listOf("new", "last") } ?: d.startup,
+        lastConversationId = null,
+        defaultModel = defaultModel.takeIf(::isValidModelId) ?: d.defaultModel,
+        favorites = favorites.filter(::isValidModelId),
+        customModels = customModels.filter(::isValidModelId),
+        temperature = temperature?.takeIf { it in 0f..2f },
+        topP = topP?.takeIf { it in 0f..1f },
+        reasoning = reasoning.takeIf { it in EFFORTS } ?: d.reasoning,
+    )
+}
 
 private val Context.dataStore by preferencesDataStore("settings")
 
