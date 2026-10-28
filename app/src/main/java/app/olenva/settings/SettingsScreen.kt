@@ -386,7 +386,13 @@ private fun NullableSlider(title: Int, value: Float?, range: ClosedFloatingPoint
             Switch(checked = value != null, onCheckedChange = hapticToggle { onChange(if (it) fallback else null) }, enabled = enabled, modifier = Modifier.padding(start = 8.dp))
         }
         if (value != null && enabled) {
-            Slider(value = value, onValueChange = { onChange((it * 20).roundToInt() / 20f) }, valueRange = range)
+            val view = LocalView.current
+            // The stored value lags a frame behind the drag, so remember the last step locally to tick once per step.
+            var last by remember { mutableStateOf(value) }
+            Slider(value = value, onValueChange = {
+                val v = (it * 20).roundToInt() / 20f
+                if (v != last) { last = v; view.tick(); onChange(v) }
+            }, valueRange = range)
         }
         if (!enabled) Text(stringResource(R.string.param_unsupported), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

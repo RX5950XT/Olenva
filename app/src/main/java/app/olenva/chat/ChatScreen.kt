@@ -114,6 +114,7 @@ import androidx.compose.ui.graphics.Color
 import android.view.HapticFeedbackConstants
 import androidx.compose.ui.platform.LocalView
 import app.olenva.ui.haptic
+import app.olenva.ui.confirm
 import app.olenva.ui.tick
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -173,6 +174,7 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
     var mathTex by remember { mutableStateOf<String?>(null) }
     var rawFor by remember { mutableStateOf<MessageEntity?>(null) }
     var lacksImages by remember { mutableStateOf<String?>(null) }
+    val view = LocalView.current
 
     LaunchedEffect(Unit) {
         vm.events.collect { e ->
@@ -183,6 +185,7 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
                     nav.openSettings()
                 }
                 is UiEvent.ModelLacksImages -> lacksImages = e.modelName
+                UiEvent.Attached -> view.confirm()
             }
         }
     }

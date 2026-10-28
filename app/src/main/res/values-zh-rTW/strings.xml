@@ -226,7 +226,7 @@
     <string name="clear_cache_desc">移除沒被任何對話使用的暫存圖片</string>
     <string name="cache_cleared">已清理</string>
     <string name="export_all">匯出全部資料</string>
-    <string name="export_all_desc">所有對話與附件打包成 .zip；勾選才包含 API Key</string>
+    <string name="export_all_desc">所有對話、附件與設定打包成 .zip；勾選才包含 API Key</string>
     <string name="import_backup">匯入備份</string>
     <string name="import_done">已匯入 %1$d 段對話</string>
     <string name="import_done_key">已匯入 %1$d 段對話，API Key 已還原</string>

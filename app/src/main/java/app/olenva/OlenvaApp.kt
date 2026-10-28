@@ -52,7 +52,7 @@ class AppContainer(context: Context) {
     val openRouter = OpenRouter()
     val models = ModelRepository(File(context.filesDir, "models.json"), openRouter, scope)
     val scan = ScanPipeline(attachments)
-    val backup = Backup(dao, attachments, secrets)
+    val backup = Backup(dao, attachments, secrets, settings)
 }
 
 /** Model catalogue from OpenRouter, cached on disk so the picker and capability checks work offline. */

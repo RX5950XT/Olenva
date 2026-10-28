@@ -53,7 +53,12 @@ android {
     buildFeatures { compose = true }
     androidResources { localeFilters += listOf("en", "zh-rTW") }
     // DebugProbesKt.bin only serves the coroutines debugger.
-    packaging { resources.excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "DebugProbesKt.bin") }
+    packaging {
+        resources.excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "DebugProbesKt.bin")
+        // arm64 OpenCV is our own build with only core/imgproc/dnn (14 MB instead of 24 MB, tools/build_opencv_slim.sh);
+        // the app's jniLibs come first, so this keeps it over the AAR's copy.
+        jniLibs.pickFirsts += "lib/arm64-v8a/libopencv_java4.so"
+    }
 }
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }

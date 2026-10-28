@@ -387,6 +387,7 @@ private fun CameraContent(
                     frame = frame,
                     modifier = Modifier.fillMaxSize().pointerInput(camera) {
                         detectTapGestures { pos ->
+                            view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                             val point = previewView.meteringPointFactory.createPoint(pos.x, pos.y)
                             camera?.cameraControl?.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
                         }

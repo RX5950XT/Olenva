@@ -2,3 +2,6 @@ gradlew text eol=lf
 *.bat text eol=crlf
 *.jar binary
 *.woff2 binary
+*.sh text eol=lf
+*.so binary
+*.onnx binary

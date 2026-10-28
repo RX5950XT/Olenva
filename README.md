@@ -41,7 +41,7 @@
 ### 其他
 
 - 對話紀錄：自動命名、搜尋、重新命名、刪除；側邊欄往左一滑就收起。
-- 草稿自動保存；可匯出 Markdown、含附件的 zip 備份並匯入（可選擇連 API Key 一起備份）。
+- 草稿自動保存；可匯出 Markdown、含附件與設定的 zip 備份並匯入（可選擇連 API Key 一起備份）。
 - 附件：相簿、檔案（JPG／PNG／WebP／PDF／TXT／MD）、從其他 App 分享進來。
 - 所有按鈕、選單、開關都有震動回饋（跟著系統「觸碰回饋」開關）。
 - 對話字體大小（含即時預覽）、淺色／深色／跟隨系統、繁體中文／English。
@@ -64,6 +64,7 @@ adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ```
 
 - 依 CPU 架構分包（arm64-v8a、x86_64），因為 OpenCV 原生庫很大。
+- arm64 的 OpenCV 原生庫是精簡版，只含 App 用到的 core、imgproc、dnn（14 MB，官方完整版 24 MB），放在 `app/src/main/jniLibs/`，用 `tools/build_opencv_slim.sh` 重編；Java 類別與 x86_64 版仍來自 Maven 的 `org.opencv:opencv`，兩邊版本要一起升。
 - release 的簽名金鑰從環境變數讀取：`OLENVA_KEYSTORE`（金鑰檔路徑）、`OLENVA_KEYSTORE_PASSWORD`、`OLENVA_KEY_ALIAS`（預設 `olenva`）。沒設定時改用本機的 debug key，照樣能建置安裝，但無法覆蓋安裝 Releases 上的版本（簽名不同）。
 
 ## 測試
@@ -94,7 +95,7 @@ node tools/render-test.js          # Markdown + LaTeX 渲染回歸測試
 | 元件 | 用途 | 授權 |
 |---|---|---|
 | [DocAligner](https://github.com/DocsaidLab/DocAligner) lcnet100 | 找紙張四角；用 `tools/docaligner_to_opencv.py` 改寫部分運算節點讓 OpenCV 能讀，輸出不變 | Apache-2.0（`third_party/DocAligner/LICENSE`） |
-| PaddleOCR [PP-LCNet_x1_0_doc_ori](https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_doc_ori_onnx) | 判斷頁面上下方向；官方 ONNX 原檔 | Apache-2.0（`third_party/PP-LCNet_doc_ori/LICENSE`） |
+| PaddleOCR [PP-LCNet_x1_0_doc_ori](https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_doc_ori_onnx) | 判斷頁面上下方向；官方 ONNX，權重用 `tools/onnx_fp16_weights.py` 改存半精度 | Apache-2.0（`third_party/PP-LCNet_doc_ori/LICENSE`） |
 | [OpenCV](https://opencv.org) | 影像處理、執行上面兩個模型 | Apache-2.0 |
 | KaTeX、markdown-it、highlight.js、morphdom | 對話渲染 | MIT／BSD-3-Clause |
 
