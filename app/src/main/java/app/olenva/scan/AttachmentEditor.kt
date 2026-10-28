@@ -11,7 +11,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -81,20 +80,16 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.math.hypot
+import app.olenva.ui.haptic
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material3.Switch
+import androidx.compose.ui.semantics.Role
+import app.olenva.ui.hapticToggle
 
 private val Ink = Color(0xFF14120F)
 private val Paper = Color(0xFFF6F1E7)
 private val Guide = Color(0xFFB9CDE6)
-
-val ENHANCE_MODES = listOf("auto", "original")
-
-@Composable
-fun enhanceLabel(mode: String) = stringResource(
-    when (mode) {
-        "original" -> R.string.mode_original
-        else -> R.string.mode_auto
-    }
-)
 
 /**
  * Preview of one attachment. When [editable], images can be re-cropped, rotated and switched between
@@ -146,10 +141,10 @@ fun AttachmentEditor(
         }
         Column(Modifier.fillMaxSize().safeDrawingPadding()) {
             Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
+                IconButton(onClick = haptic(onClose)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
                 Text(current.name, Modifier.weight(1f), maxLines = 1, style = MaterialTheme.typography.titleSmall)
-                if (onRetake != null) IconButton(onClick = onRetake) { Icon(Icons.Default.PhotoCamera, stringResource(R.string.retake)) }
-                if (onDelete != null) IconButton(onClick = onDelete) { Icon(Icons.Default.Delete, stringResource(R.string.delete)) }
+                if (onRetake != null) IconButton(onClick = haptic(onRetake)) { Icon(Icons.Default.PhotoCamera, stringResource(R.string.retake)) }
+                if (onDelete != null) IconButton(onClick = haptic(onDelete)) { Icon(Icons.Default.Delete, stringResource(R.string.delete)) }
             }
             Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                 when (current.kind) {
@@ -163,36 +158,35 @@ fun AttachmentEditor(
                 Text(stringResource(R.string.process_failed), Modifier.padding(16.dp), color = Color(0xFFE8B86A))
             }
             if (editable && current.kind == AttachmentKind.IMAGE) {
+                // One switch: on = auto enhance, off = the original colours. Pages saved with the retired
+                // colour/gray/b&w modes count as enhanced.
+                val enhanced = (current.mode ?: "original") != "original"
                 Row(
-                    Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 12.dp, vertical = 8.dp),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Modifier
+                        .padding(horizontal = 12.dp, vertical = 8.dp)
+                        .clip(RoundedCornerShape(50))
+                        .background(Color.White.copy(alpha = .08f))
+                        .toggleable(enhanced, enabled = !busy, role = Role.Switch, onValueChange = hapticToggle { on ->
+                            apply(current.quad?.toFloatArray(), current.rotation, if (on) "auto" else "original")
+                        })
+                        .padding(start = 16.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Pages saved with the retired colour/gray/b&w modes render as auto now.
-                    val activeMode = if ((current.mode ?: "original") == "original") "original" else "auto"
-                    ENHANCE_MODES.forEach { m ->
-                        val on = m == activeMode
-                        Text(
-                            enhanceLabel(m),
-                            Modifier
-                                .clip(RoundedCornerShape(50))
-                                .background(if (on) Paper else Color.White.copy(alpha = .08f))
-                                .clickable(enabled = !busy && !on) { apply(current.quad?.toFloatArray(), current.rotation, m) }
-                                .padding(horizontal = 14.dp, vertical = 8.dp),
-                            color = if (on) Ink else Paper,
-                            fontSize = 14.sp,
-                            fontWeight = if (on) FontWeight.SemiBold else FontWeight.Normal,
-                        )
-                    }
+                    Icon(Icons.Default.AutoFixHigh, null, tint = Paper, modifier = Modifier.size(20.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.mode_auto), color = Paper, fontSize = 14.sp)
+                    Spacer(Modifier.width(12.dp))
+                    Switch(checked = enhanced, onCheckedChange = null, enabled = !busy)
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    TextButton(onClick = { cropping = true }, enabled = !busy) {
+                    TextButton(onClick = haptic { cropping = true }, enabled = !busy) {
                         Icon(Icons.Default.Crop, null, tint = Paper); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.crop), color = Paper)
                     }
-                    TextButton(onClick = { apply(current.quad?.toFloatArray(), (current.rotation + 90) % 360, current.mode ?: "original") }, enabled = !busy) {
+                    TextButton(onClick = haptic { apply(current.quad?.toFloatArray(), (current.rotation + 90) % 360, current.mode ?: "original") }, enabled = !busy) {
                         Icon(Icons.AutoMirrored.Filled.RotateRight, null, tint = Paper); Spacer(Modifier.width(6.dp)); Text(stringResource(R.string.rotate), color = Paper)
                     }
                     Spacer(Modifier.weight(1f))
-                    Button(onClick = onClose, enabled = !busy) { Text(stringResource(R.string.done)) }
+                    Button(onClick = haptic(onClose), enabled = !busy) { Text(stringResource(R.string.done)) }
                 }
             }
         }
@@ -341,13 +335,13 @@ private fun CropEditor(attachment: Attachment, onCancel: () -> Unit, onApply: (Q
             }
         }
         Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            TextButton(onClick = onCancel) { Text(stringResource(R.string.cancel), color = Paper) }
-            TextButton(onClick = { scope.launch { pipeline.detect(attachment)?.let { quad = it } } }) {
+            TextButton(onClick = haptic(onCancel)) { Text(stringResource(R.string.cancel), color = Paper) }
+            TextButton(onClick = haptic { scope.launch { pipeline.detect(attachment)?.let { quad = it } } }) {
                 Text(stringResource(R.string.crop_auto), color = Paper)
             }
-            TextButton(onClick = { quad = full.copyOf() }) { Text(stringResource(R.string.crop_full), color = Paper) }
+            TextButton(onClick = haptic { quad = full.copyOf() }) { Text(stringResource(R.string.crop_full), color = Paper) }
             Spacer(Modifier.weight(1f))
-            Button(onClick = { onApply(if (quad.contentEquals(full)) null else DocDetector.order(quad)) }) { Text(stringResource(R.string.apply)) }
+            Button(onClick = haptic { onApply(if (quad.contentEquals(full)) null else DocDetector.order(quad)) }) { Text(stringResource(R.string.apply)) }
         }
     }
 }

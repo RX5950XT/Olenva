@@ -63,6 +63,7 @@ import app.olenva.container
 import app.olenva.net.ModelInfo
 import kotlinx.coroutines.launch
 import java.util.Locale
+import app.olenva.ui.haptic
 
 /** Full-screen model chooser. [onPick] gets the chosen id; favourites and custom ids come from settings. */
 @Composable
@@ -110,10 +111,10 @@ fun ModelPicker(
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
+                IconButton(onClick = haptic(onClose)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
                 Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
                 if (loading) CircularProgressIndicator(Modifier.size(20.dp).padding(end = 4.dp), strokeWidth = 2.dp)
-                IconButton(onClick = { c.models.refresh() }) { Icon(Icons.Default.Refresh, stringResource(R.string.refresh)) }
+                IconButton(onClick = haptic { c.models.refresh() }) { Icon(Icons.Default.Refresh, stringResource(R.string.refresh)) }
             }
             OutlinedTextField(
                 value = query,
@@ -126,7 +127,7 @@ fun ModelPicker(
             )
             Row(Modifier.padding(horizontal = 16.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 AssistChip(
-                    onClick = { adding = true },
+                    onClick = haptic { adding = true },
                     label = { Text(stringResource(R.string.add_model_id)) },
                     leadingIcon = { Icon(Icons.Default.Add, null, Modifier.size(18.dp)) },
                 )
@@ -161,7 +162,7 @@ fun ModelPicker(
                     val open = othersOpen || q.isNotEmpty()
                     item(key = "h-others") {
                         Row(
-                            Modifier.fillMaxWidth().clickable { othersOpen = !othersOpen }.padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
+                            Modifier.fillMaxWidth().clickable(onClick = haptic { othersOpen = !othersOpen }).padding(start = 20.dp, end = 16.dp, top = 12.dp, bottom = 12.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Text(
@@ -209,8 +210,8 @@ private fun AddModelDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
             )
         },
-        confirmButton = { TextButton(onClick = { onAdd(id) }, enabled = valid) { Text(stringResource(R.string.add)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { TextButton(onClick = haptic { onAdd(id) }, enabled = valid) { Text(stringResource(R.string.add)) } },
+        dismissButton = { TextButton(onClick = haptic(onDismiss)) { Text(stringResource(R.string.cancel)) } },
     )
 }
 
@@ -262,7 +263,7 @@ private fun ModelRow(
 ) {
     val colors = MaterialTheme.colorScheme
     Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(start = 20.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
+        Modifier.fillMaxWidth().clickable(onClick = haptic(onClick)).padding(start = 20.dp, end = 4.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -296,9 +297,9 @@ private fun ModelRow(
             }
         }
         if (onRemove != null) {
-            IconButton(onClick = onRemove) { Icon(Icons.Default.Close, stringResource(R.string.remove), tint = colors.onSurfaceVariant) }
+            IconButton(onClick = haptic(onRemove)) { Icon(Icons.Default.Close, stringResource(R.string.remove), tint = colors.onSurfaceVariant) }
         }
-        IconButton(onClick = onFav) {
+        IconButton(onClick = haptic(onFav)) {
             Icon(
                 if (favorite) Icons.Default.Star else Icons.Default.StarBorder,
                 stringResource(if (favorite) R.string.unfavorite else R.string.favorite),

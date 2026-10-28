@@ -45,12 +45,10 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DocumentScanner
 import androidx.compose.material.icons.filled.Edit
-import androidx.compose.material.icons.filled.EditNote
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Stop
 import androidx.compose.material.icons.filled.TextSnippet
@@ -105,6 +103,35 @@ import app.olenva.ui.MonoStyle
 import app.olenva.ui.Serif
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import androidx.compose.material3.Slider
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import app.olenva.data.EFFORTS
+import kotlin.math.roundToInt
+import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.ui.graphics.Color
+import android.view.HapticFeedbackConstants
+import androidx.compose.ui.platform.LocalView
+import app.olenva.ui.haptic
+import app.olenva.ui.tick
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.awaitLongPressOrCancellation
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.input.pointer.changedToUp
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.IntRect
+import androidx.compose.ui.unit.IntSize
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupPositionProvider
 
 fun Context.copyToClipboard(text: String, label: String = "Olenva") {
     getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(label, text))
@@ -161,6 +188,7 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
     }
 
     val modelName = remember(modelId, models) { vm.modelInfo(modelId)?.name ?: modelId.substringAfter('/') }
+    val thinks = remember(modelId, models) { vm.modelInfo(modelId)?.supports("reasoning") != false }
 
     val callbacks = remember {
         object : TranscriptCallbacks {
@@ -196,6 +224,7 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
                 onNew = { vm.newChat(); scope.launch { drawer.close() } },
                 onSettings = { scope.launch { drawer.close() }; nav.openSettings() },
                 onExport = { id -> nav.exportConversation(id) },
+                onSwipeClose = { drawer.close() },
             )
         },
     ) {
@@ -205,8 +234,7 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
                     modelName = modelName,
                     onMenu = { scope.launch { drawer.open() } },
                     onModel = { nav.openModelPicker() },
-                    onNew = vm::newChat,
-                    onSettings = nav::openSettings,
+                    onNew = vm::newChat.takeIf { messages.isNotEmpty() },
                 )
                 Box(Modifier.weight(1f).fillMaxWidth()) {
                     Transcript(
@@ -222,6 +250,8 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
                 Composer(
                     draft = draft,
                     generating = generating,
+                    effort = settings.reasoning.takeIf { thinks },
+                    onEffort = vm::setEffort,
                     onText = vm::setText,
                     onSend = vm::send,
                     onStop = vm::stop,
@@ -260,25 +290,25 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
             title = { Text(stringResource(R.string.no_image_title)) },
             text = { Text(stringResource(R.string.no_image_body, name)) },
             confirmButton = {
-                Button(onClick = { lacksImages = null; nav.openModelPicker() }) { Text(stringResource(R.string.pick_vision_model)) }
+                Button(onClick = haptic { lacksImages = null; nav.openModelPicker() }) { Text(stringResource(R.string.pick_vision_model)) }
             },
-            dismissButton = { TextButton(onClick = { lacksImages = null }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { TextButton(onClick = haptic { lacksImages = null }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
 
 @Composable
-private fun TopBar(modelName: String, onMenu: () -> Unit, onModel: () -> Unit, onNew: () -> Unit, onSettings: () -> Unit) {
+private fun TopBar(modelName: String, onMenu: () -> Unit, onModel: () -> Unit, onNew: (() -> Unit)?) {
     Row(
         Modifier.fillMaxWidth().height(56.dp).padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        IconButton(onClick = onMenu) { Icon(Icons.Default.Menu, stringResource(R.string.history)) }
+        IconButton(onClick = haptic(onMenu)) { Icon(Icons.Default.Menu, stringResource(R.string.history)) }
         Row(
             Modifier
                 .weight(1f)
                 .clip(RoundedCornerShape(50))
-                .clickable(onClick = onModel)
+                .clickable(onClick = haptic(onModel))
                 .padding(horizontal = 12.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.Center,
@@ -292,8 +322,9 @@ private fun TopBar(modelName: String, onMenu: () -> Unit, onModel: () -> Unit, o
             )
             Icon(Icons.Default.ExpandMore, stringResource(R.string.switch_model), Modifier.size(20.dp))
         }
-        IconButton(onClick = onNew) { Icon(Icons.Default.EditNote, stringResource(R.string.new_chat)) }
-        IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, stringResource(R.string.settings)) }
+        // A fresh chat has nothing to start over from; the empty slot keeps the model name centred.
+        if (onNew != null) IconButton(onClick = haptic(onNew)) { Icon(painterResource(R.drawable.ic_new_chat), stringResource(R.string.new_chat)) }
+        else Spacer(Modifier.width(48.dp))
     }
 }
 
@@ -323,7 +354,7 @@ private fun EmptyState(hasKey: Boolean, onSetKey: () -> Unit) {
                     Spacer(Modifier.height(6.dp))
                     Text(stringResource(R.string.setup_key_body), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.height(14.dp))
-                    Button(onClick = onSetKey) { Text(stringResource(R.string.setup_key_action)) }
+                    Button(onClick = haptic(onSetKey)) { Text(stringResource(R.string.setup_key_action)) }
                 }
             }
         }
@@ -334,6 +365,8 @@ private fun EmptyState(hasKey: Boolean, onSetKey: () -> Unit) {
 private fun Composer(
     draft: Draft,
     generating: Boolean,
+    effort: String?,
+    onEffort: (String) -> Unit,
     onText: (String) -> Unit,
     onSend: () -> Unit,
     onStop: () -> Unit,
@@ -388,7 +421,7 @@ private fun Composer(
                     Modifier
                         .clip(RoundedCornerShape(50))
                         .background(colors.primary)
-                        .clickable(onClick = onScan)
+                        .clickable(onClick = haptic(onScan))
                         .padding(horizontal = 14.dp, vertical = 9.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
@@ -397,12 +430,12 @@ private fun Composer(
                     Text(stringResource(R.string.scan), color = colors.onPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                 }
                 Box {
-                    IconButton(onClick = { attachMenu = true }) { Icon(Icons.Default.Add, stringResource(R.string.attach)) }
+                    IconButton(onClick = haptic { attachMenu = true }) { Icon(Icons.Default.Add, stringResource(R.string.attach)) }
                     DropdownMenu(expanded = attachMenu, onDismissRequest = { attachMenu = false }) {
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.attach_photos)) },
                             leadingIcon = { Icon(Icons.Default.Image, null) },
-                            onClick = {
+                            onClick = haptic {
                                 attachMenu = false
                                 pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly))
                             },
@@ -410,13 +443,14 @@ private fun Composer(
                         DropdownMenuItem(
                             text = { Text(stringResource(R.string.attach_files)) },
                             leadingIcon = { Icon(Icons.AutoMirrored.Filled.InsertDriveFile, null) },
-                            onClick = {
+                            onClick = haptic {
                                 attachMenu = false
                                 pickFiles.launch(arrayOf("application/pdf", "text/plain", "text/markdown", "image/*"))
                             },
                         )
                     }
                 }
+                if (effort != null) EffortButton(effort, onEffort)
                 Spacer(Modifier.weight(1f))
                 if (generating) {
                     RoundButton(Icons.Default.Stop, stringResource(R.string.stop), enabled = true, onClick = onStop)
@@ -428,6 +462,101 @@ private fun Composer(
     }
 }
 
+/**
+ * Thinking effort: hold the button, slide sideways through low / medium / high, let go to keep it. The scale shows
+ * above the button so the finger doesn't cover it.
+ */
+@Composable
+private fun EffortButton(effort: String, onChange: (String) -> Unit) {
+    val context = LocalContext.current
+    val view = LocalView.current
+    val colors = MaterialTheme.colorScheme
+    var pos by remember(effort) { mutableIntStateOf(EFFORTS.indexOf(effort).coerceAtLeast(0)) }
+    var holding by remember { mutableStateOf(false) }
+    val names = listOf(R.string.low, R.string.medium, R.string.high).map { stringResource(it) }
+    val title = stringResource(R.string.reasoning)
+    val step = with(LocalDensity.current) { 44.dp.toPx() }
+    Box {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(50))
+                .background(if (holding) colors.surfaceContainerHigh else Color.Transparent)
+                .pointerInput(effort) {
+                    awaitEachGesture {
+                        val down = awaitFirstDown()
+                        val held = awaitLongPressOrCancellation(down.id)
+                        if (held == null) {
+                            if (currentEvent.changes.all { it.changedToUp() }) {
+                                view.performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                                Toast.makeText(context, R.string.effort_hint, Toast.LENGTH_SHORT).show()
+                            }
+                            return@awaitEachGesture
+                        }
+                        view.performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+                        holding = true
+                        val start = pos
+                        try {
+                            while (true) {
+                                val c = awaitPointerEvent().changes.firstOrNull { it.id == held.id } ?: break
+                                if (!c.pressed) break
+                                c.consume()
+                                val i = (start + ((c.position.x - held.position.x) / step).roundToInt()).coerceIn(0, 2)
+                                if (i != pos) { pos = i; view.tick() }
+                            }
+                        } finally {
+                            holding = false
+                            if (EFFORTS[pos] != effort) onChange(EFFORTS[pos])
+                        }
+                    }
+                }
+                .padding(horizontal = 10.dp, vertical = 8.dp)
+                .semantics(mergeDescendants = true) {
+                    // TalkBack can't hold-and-slide; expose it as an adjustable control instead.
+                    contentDescription = title
+                    stateDescription = names[pos]
+                    progressBarRangeInfo = ProgressBarRangeInfo(pos.toFloat(), 0f..2f, steps = 1)
+                    setProgress { v -> v.roundToInt().coerceIn(0, 2).let { pos = it; onChange(EFFORTS[it]) }; true }
+                },
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(Icons.Default.Psychology, null, tint = colors.onSurfaceVariant, modifier = Modifier.size(18.dp))
+            Spacer(Modifier.width(4.dp))
+            Text(names[pos], style = MaterialTheme.typography.labelMedium, color = colors.onSurfaceVariant, maxLines = 1)
+        }
+        if (holding) {
+            val gap = with(LocalDensity.current) { 64.dp.roundToPx() }
+            Popup(popupPositionProvider = remember(gap) { AboveAnchor(gap) }) {
+                Surface(shape = RoundedCornerShape(20.dp), color = colors.surfaceContainerHigh, shadowElevation = 6.dp) {
+                    Column(Modifier.width(232.dp).padding(horizontal = 16.dp, vertical = 12.dp)) {
+                        Text(title, style = MaterialTheme.typography.labelLarge, color = colors.onSurfaceVariant)
+                        // Display only: the finger stays on the button underneath.
+                        Slider(value = pos.toFloat(), onValueChange = {}, valueRange = 0f..2f, steps = 1)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            names.forEachIndexed { i, n ->
+                                Text(
+                                    n,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    fontWeight = if (i == pos) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = if (i == pos) colors.primary else colors.onSurfaceVariant,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Centres the popup over its anchor, [gap] px above it, kept inside the window. */
+private class AboveAnchor(private val gap: Int) : PopupPositionProvider {
+    override fun calculatePosition(anchorBounds: IntRect, windowSize: IntSize, layoutDirection: LayoutDirection, popupContentSize: IntSize) =
+        IntOffset(
+            (anchorBounds.center.x - popupContentSize.width / 2).coerceIn(0, maxOf(0, windowSize.width - popupContentSize.width)),
+            anchorBounds.top - popupContentSize.height - gap,
+        )
+}
+
 @Composable
 private fun RoundButton(icon: ImageVector, label: String, enabled: Boolean, onClick: () -> Unit) {
     val c = MaterialTheme.colorScheme
@@ -436,7 +565,7 @@ private fun RoundButton(icon: ImageVector, label: String, enabled: Boolean, onCl
             .size(40.dp)
             .clip(CircleShape)
             .background(if (enabled) c.onSurface else c.surfaceContainerHighest)
-            .clickable(enabled = enabled, onClick = onClick),
+            .clickable(enabled = enabled, onClick = haptic(onClick)),
         contentAlignment = Alignment.Center,
     ) {
         Icon(icon, label, tint = if (enabled) c.surface else c.onSurfaceVariant.copy(alpha = .6f), modifier = Modifier.size(22.dp))
@@ -453,7 +582,7 @@ private fun AttachmentChip(a: Attachment, onOpen: () -> Unit, onRemove: () -> Un
                 model = store.file(a.path),
                 contentDescription = a.name,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, c.outlineVariant, RoundedCornerShape(12.dp)).clickable(onClick = onOpen),
+                modifier = Modifier.size(64.dp).clip(RoundedCornerShape(12.dp)).border(1.dp, c.outlineVariant, RoundedCornerShape(12.dp)).clickable(onClick = haptic(onOpen)),
             )
         } else {
             Row(
@@ -462,7 +591,7 @@ private fun AttachmentChip(a: Attachment, onOpen: () -> Unit, onRemove: () -> Un
                     .widthIn(max = 200.dp)
                     .clip(RoundedCornerShape(12.dp))
                     .background(c.surfaceContainer)
-                    .clickable(onClick = onOpen)
+                    .clickable(onClick = haptic(onOpen))
                     .padding(horizontal = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -481,7 +610,7 @@ private fun AttachmentChip(a: Attachment, onOpen: () -> Unit, onRemove: () -> Un
                 .size(22.dp)
                 .clip(CircleShape)
                 .background(c.inverseSurface.copy(alpha = .8f))
-                .clickable(onClick = onRemove),
+                .clickable(onClick = haptic(onRemove)),
             contentAlignment = Alignment.Center,
         ) {
             Icon(Icons.Default.Close, stringResource(R.string.remove_attachment), tint = c.inverseOnSurface, modifier = Modifier.size(14.dp))
@@ -538,8 +667,8 @@ private fun MessageSheet(
         AlertDialog(
             onDismissRequest = { confirmDelete = false },
             text = { Text(stringResource(R.string.delete_message_confirm)) },
-            confirmButton = { TextButton(onClick = { confirmDelete = false; act(onDelete) }) { Text(stringResource(R.string.delete)) } },
-            dismissButton = { TextButton(onClick = { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } },
+            confirmButton = { TextButton(onClick = haptic { confirmDelete = false; act(onDelete) }) { Text(stringResource(R.string.delete)) } },
+            dismissButton = { TextButton(onClick = haptic { confirmDelete = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -551,7 +680,7 @@ fun SheetItem(icon: ImageVector, label: String, danger: Boolean = false, onClick
         headlineContent = { Text(label, color = color) },
         leadingContent = { Icon(icon, null, tint = color) },
         colors = ListItemDefaults.colors(containerColor = androidx.compose.ui.graphics.Color.Transparent),
-        modifier = Modifier.clickable(onClick = onClick).padding(horizontal = 8.dp),
+        modifier = Modifier.clickable(onClick = haptic(onClick)).padding(horizontal = 8.dp),
     )
 }
 
@@ -574,9 +703,9 @@ private fun MathSheet(tex: String, onDismiss: () -> Unit) {
             }
             Spacer(Modifier.height(16.dp))
             Row {
-                Button(onClick = { context.copyToClipboard(tex); onDismiss() }) { Text(stringResource(R.string.copy_latex)) }
+                Button(onClick = haptic { context.copyToClipboard(tex); onDismiss() }) { Text(stringResource(R.string.copy_latex)) }
                 Spacer(Modifier.width(8.dp))
-                TextButton(onClick = { context.copyToClipboard("$$\n$tex\n$$"); onDismiss() }) { Text(stringResource(R.string.copy_with_delims)) }
+                TextButton(onClick = haptic { context.copyToClipboard("$$\n$tex\n$$"); onDismiss() }) { Text(stringResource(R.string.copy_with_delims)) }
             }
         }
     }
@@ -590,7 +719,7 @@ private fun RawSheet(text: String, onDismiss: () -> Unit) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 20.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(stringResource(R.string.view_source), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { context.copyToClipboard(text) }) { Text(stringResource(R.string.copy_all)) }
+                TextButton(onClick = haptic { context.copyToClipboard(text) }) { Text(stringResource(R.string.copy_all)) }
             }
             Text(stringResource(R.string.select_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
@@ -614,7 +743,7 @@ private fun EditDialog(initial: String, onDismiss: () -> Unit, onSubmit: (String
         text = {
             OutlinedTextField(text, { text = it }, Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 320.dp))
         },
-        confirmButton = { Button(onClick = { onSubmit(text) }, enabled = text.isNotBlank()) { Text(stringResource(R.string.send)) } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+        confirmButton = { Button(onClick = haptic { onSubmit(text) }, enabled = text.isNotBlank()) { Text(stringResource(R.string.send)) } },
+        dismissButton = { TextButton(onClick = haptic(onDismiss)) { Text(stringResource(R.string.cancel)) } },
     )
 }

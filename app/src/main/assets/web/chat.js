@@ -4,7 +4,7 @@
   'use strict';
   var R = window.OlenvaRender;
   var esc = R.esc;
-  var bridge = window.Android || { copy: function () {}, action: function () {}, openImage: function () {}, openLink: function () {}, onMath: function () {}, ready: function () {} };
+  var bridge = window.Android || { copy: function () {}, action: function () {}, openImage: function () {}, openLink: function () {}, onMath: function () {}, ready: function () {}, haptic: function () {} };
   var list = document.getElementById('list');
   var jump = document.getElementById('jump');
   var last = new Map();      // id -> serialized message last rendered
@@ -142,6 +142,7 @@
   jump.addEventListener('click', function () { window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'smooth' }); });
 
   document.addEventListener('click', function (e) {
+    if (e.target.closest('a[href], [data-tex], [data-act], summary, #jump')) bridge.haptic();
     var a = e.target.closest('a[href]');
     if (a) { e.preventDefault(); bridge.openLink(a.getAttribute('href')); return; }
     var math = e.target.closest('[data-tex]');

@@ -139,7 +139,6 @@
 
     <!-- editor -->
     <string name="mode_auto">自動增強</string>
-    <string name="mode_original">原始彩色</string>
     <string name="crop">裁切</string>
     <string name="rotate">旋轉</string>
     <string name="crop_hint">拖曳四個角對齊文件邊緣</string>
@@ -182,19 +181,16 @@
     <string name="show_usage">顯示用量與費用</string>
     <string name="show_usage_desc">在回答下方顯示 token 數與 OpenRouter 回報的費用</string>
     <string name="advanced">進階模型參數</string>
-    <string name="advanced_desc">System Prompt、Temperature、輸出上限、推理強度</string>
+    <string name="advanced_desc">System Prompt、Temperature、Top P</string>
     <string name="system_prompt">System Prompt</string>
     <string name="temperature">Temperature</string>
     <string name="top_p">Top P</string>
-    <string name="max_tokens">輸出 Token 上限</string>
-    <string name="model_default">使用模型預設值</string>
     <string name="model_default_short">預設</string>
-    <string name="reasoning">推理強度</string>
-    <string name="reasoning_unsupported">預設模型不支援推理選項</string>
+    <string name="effort_hint">長按後左右滑動來調整思考強度</string>
+    <string name="reasoning">思考</string>
     <string name="param_unsupported">預設模型不支援此參數</string>
-    <string name="params_note">參數只會在模型支援時送出。推理型模型的思考內容也會占用輸出上限。</string>
+    <string name="params_note">參數只會在模型支援時送出。回覆長度上限直接用模型支援的最大值。</string>
     <string name="reset_params">恢復預設參數</string>
-    <string name="off">關閉</string>
     <string name="low">低</string>
     <string name="medium">中</string>
     <string name="high">高</string>

@@ -116,6 +116,7 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 import kotlin.math.abs
 import java.util.concurrent.Executors
+import app.olenva.ui.haptic
 
 private val Ink = Color(0xFF14120F)
 private val Paper = Color(0xFFF6F1E7)
@@ -167,10 +168,10 @@ private fun PermissionDenied(onClose: () -> Unit) {
         Spacer(Modifier.height(12.dp))
         Text(stringResource(R.string.camera_denied_body), style = MaterialTheme.typography.bodyMedium, color = Paper.copy(alpha = .8f))
         Spacer(Modifier.height(24.dp))
-        Button(onClick = {
+        Button(onClick = haptic {
             context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
         }) { Text(stringResource(R.string.open_settings)) }
-        TextButton(onClick = onClose) { Text(stringResource(R.string.back_to_chat), color = Paper) }
+        TextButton(onClick = haptic(onClose)) { Text(stringResource(R.string.back_to_chat), color = Paper) }
     }
 }
 
@@ -354,7 +355,7 @@ private fun CameraContent(
     Column(Modifier.fillMaxSize().safeDrawingPadding()) {
         // Top controls
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { if (pages.isNotEmpty()) confirmDiscard = true else onClose() }) {
+            IconButton(onClick = haptic { if (pages.isNotEmpty()) confirmDiscard = true else onClose() }) {
                 Icon(Icons.Default.Close, stringResource(R.string.close))
             }
             Spacer(Modifier.weight(1f))
@@ -371,7 +372,7 @@ private fun CameraContent(
             )
             Spacer(Modifier.weight(1f))
             if (camera?.cameraInfo?.hasFlashUnit() == true) {
-                IconButton(onClick = { torch = !torch; camera?.cameraControl?.enableTorch(torch) }) {
+                IconButton(onClick = haptic { torch = !torch; camera?.cameraControl?.enableTorch(torch) }) {
                     Icon(if (torch) Icons.Default.FlashOn else Icons.Default.FlashOff, stringResource(R.string.torch))
                 }
             } else Spacer(Modifier.size(48.dp))
@@ -427,7 +428,7 @@ private fun CameraContent(
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                 if (pages.isNotEmpty()) {
                     Button(
-                        onClick = { onDone(pages.toList()) },
+                        onClick = haptic { onDone(pages.toList()) },
                         enabled = processing == 0,
                     ) { Text(stringResource(R.string.scan_done, pages.size)) }
                 }
@@ -438,7 +439,7 @@ private fun CameraContent(
     error?.let { msg ->
         AlertDialog(
             onDismissRequest = { error = null },
-            confirmButton = { TextButton(onClick = { error = null }) { Text(stringResource(R.string.ok)) } },
+            confirmButton = { TextButton(onClick = haptic { error = null }) { Text(stringResource(R.string.ok)) } },
             text = { Text(msg) },
         )
     }
@@ -447,13 +448,13 @@ private fun CameraContent(
             onDismissRequest = { confirmDiscard = false },
             title = { Text(stringResource(R.string.scan_discard_title, pages.size)) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = haptic {
                     confirmDiscard = false
                     onDone(pages.toList())
                 }) { Text(stringResource(R.string.scan_keep_pages)) }
             },
             dismissButton = {
-                TextButton(onClick = {
+                TextButton(onClick = haptic {
                     pages.forEach { context.container.attachments.delete(it) }
                     pages.clear()
                     confirmDiscard = false
@@ -538,7 +539,7 @@ private fun Segmented(options: List<String>, selected: Int, onSelect: (Int) -> U
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
                     .background(if (on) Paper else Color.Transparent)
-                    .clickable { onSelect(i) }
+                    .clickable(onClick = haptic { onSelect(i) })
                     .padding(horizontal = 12.dp, vertical = 6.dp),
                 color = if (on) Ink else Paper,
                 fontSize = 13.sp,
@@ -566,7 +567,7 @@ private fun ZoomChips(range: ClosedFloatingPointRange<Float>, current: Float, on
                     .size(42.dp)
                     .clip(CircleShape)
                     .background(if (on) Color.White.copy(alpha = .22f) else Color.White.copy(alpha = .08f))
-                    .clickable { onZoom(z) },
+                    .clickable(onClick = haptic { onZoom(z) }),
                 contentAlignment = Alignment.Center,
             ) {
                 Text(label, color = if (on) Color(0xFFF3D27A) else Paper, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
@@ -585,7 +586,7 @@ private fun Shutter(busy: Boolean, onClick: () -> Unit) {
             .padding(6.dp)
             .clip(CircleShape)
             .background(Paper)
-            .clickable(enabled = !busy, onClick = onClick)
+            .clickable(enabled = !busy, onClick = onClick)   // capture() gives its own, stronger buzz
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
@@ -613,7 +614,7 @@ private fun PageStrip(
                     model = store.file(a.path),
                     contentDescription = stringResource(R.string.page_n, i + 1),
                     contentScale = ContentScale.Crop,
-                    modifier = Modifier.size(44.dp, 58.dp).clip(RoundedCornerShape(6.dp)).clickable { menu = true },
+                    modifier = Modifier.size(44.dp, 58.dp).clip(RoundedCornerShape(6.dp)).clickable(onClick = haptic { menu = true }),
                 )
                 Text(
                     "${i + 1}",
@@ -621,11 +622,11 @@ private fun PageStrip(
                     color = Paper, fontSize = 10.sp,
                 )
                 DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                    DropdownMenuItem(text = { Text(stringResource(R.string.preview_edit)) }, leadingIcon = { Icon(Icons.Default.Visibility, null) }, onClick = { menu = false; onPreview(i) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.retake)) }, leadingIcon = { Icon(Icons.Default.Refresh, null) }, onClick = { menu = false; onRetake(i) })
-                    if (i > 0) DropdownMenuItem(text = { Text(stringResource(R.string.move_earlier)) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }, onClick = { menu = false; onMove(i, -1) })
-                    if (i < pages.lastIndex) DropdownMenuItem(text = { Text(stringResource(R.string.move_later)) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowForward, null) }, onClick = { menu = false; onMove(i, 1) })
-                    DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = { menu = false; onDelete(i) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.preview_edit)) }, leadingIcon = { Icon(Icons.Default.Visibility, null) }, onClick = haptic { menu = false; onPreview(i) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.retake)) }, leadingIcon = { Icon(Icons.Default.Refresh, null) }, onClick = haptic { menu = false; onRetake(i) })
+                    if (i > 0) DropdownMenuItem(text = { Text(stringResource(R.string.move_earlier)) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowBack, null) }, onClick = haptic { menu = false; onMove(i, -1) })
+                    if (i < pages.lastIndex) DropdownMenuItem(text = { Text(stringResource(R.string.move_later)) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.ArrowForward, null) }, onClick = haptic { menu = false; onMove(i, 1) })
+                    DropdownMenuItem(text = { Text(stringResource(R.string.delete)) }, leadingIcon = { Icon(Icons.Default.Delete, null) }, onClick = haptic { menu = false; onDelete(i) })
                 }
             }
         }

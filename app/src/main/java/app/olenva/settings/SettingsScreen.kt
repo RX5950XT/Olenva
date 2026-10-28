@@ -81,6 +81,10 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import kotlin.math.roundToInt
+import app.olenva.ui.haptic
+import app.olenva.ui.hapticToggle
+import androidx.compose.ui.platform.LocalView
+import app.olenva.ui.tick
 
 @Composable
 fun SettingsScreen(onClose: () -> Unit, onPickDefaultModel: () -> Unit, onDataCleared: () -> Unit) {
@@ -96,7 +100,7 @@ fun SettingsScreen(onClose: () -> Unit, onPickDefaultModel: () -> Unit, onDataCl
     Surface(color = MaterialTheme.colorScheme.background, modifier = Modifier.fillMaxSize()) {
         Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
             Row(Modifier.fillMaxWidth().padding(4.dp), verticalAlignment = Alignment.CenterVertically) {
-                IconButton(onClick = onClose) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
+                IconButton(onClick = haptic(onClose)) { Icon(Icons.AutoMirrored.Filled.ArrowBack, stringResource(R.string.back)) }
                 Text(stringResource(R.string.settings), style = MaterialTheme.typography.titleLarge)
             }
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).navigationBarsPadding().padding(bottom = 32.dp)) {
@@ -104,7 +108,7 @@ fun SettingsScreen(onClose: () -> Unit, onPickDefaultModel: () -> Unit, onDataCl
                 Section(R.string.sec_ai)
                 ApiKeyCard(key)
                 val defaultName = models.firstOrNull { it.id == s.defaultModel }?.name ?: s.defaultModel
-                Row(Modifier.fillMaxWidth().clickable(onClick = onPickDefaultModel).padding(horizontal = 20.dp, vertical = 14.dp)) {
+                Row(Modifier.fillMaxWidth().clickable(onClick = haptic(onPickDefaultModel)).padding(horizontal = 20.dp, vertical = 14.dp)) {
                     Column(Modifier.weight(1f)) {
                         Text(stringResource(R.string.default_model), style = MaterialTheme.typography.bodyLarge)
                         Text(defaultName, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -176,7 +180,7 @@ private fun Note(text: Int) {
 @Composable
 private fun ToggleRow(title: Int, desc: Int?, value: Boolean, onChange: (Boolean) -> Unit) {
     Row(
-        Modifier.fillMaxWidth().clickable { onChange(!value) }.padding(horizontal = 20.dp, vertical = 10.dp),
+        Modifier.fillMaxWidth().clickable(onClick = haptic { onChange(!value) }).padding(horizontal = 20.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
@@ -184,7 +188,7 @@ private fun ToggleRow(title: Int, desc: Int?, value: Boolean, onChange: (Boolean
             if (desc != null) Text(stringResource(desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Spacer(Modifier.width(12.dp))
-        Switch(checked = value, onCheckedChange = onChange)
+        Switch(checked = value, onCheckedChange = hapticToggle(onChange))
     }
 }
 
@@ -197,7 +201,7 @@ private fun ChoiceRow(title: Int, options: List<Pair<String, Int>>, value: Strin
             options.forEachIndexed { i, (k, label) ->
                 SegmentedButton(
                     selected = k == value,
-                    onClick = { onChange(k) },
+                    onClick = haptic { onChange(k) },
                     shape = SegmentedButtonDefaults.itemShape(i, options.size),
                     label = { Text(stringResource(label), maxLines = 1) },
                 )
@@ -218,15 +222,20 @@ private val previewMessages = listOf(
 @Composable
 private fun FontSizeRow(value: Float, onChange: (Float) -> Unit) {
     var local by remember(value) { mutableStateOf(value) }
+    val view = LocalView.current
     Column(Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(R.string.font_size), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Text("${(local * 100).roundToInt()}%", style = MaterialTheme.typography.labelLarge)
-            TextButton(onClick = { local = 1f; onChange(1f) }, enabled = local != 1f) { Text(stringResource(R.string.reset)) }
+            TextButton(onClick = haptic { local = 1f; onChange(1f) }, enabled = local != 1f) { Text(stringResource(R.string.reset)) }
         }
         Slider(
             value = local,
-            onValueChange = { local = (it * 20).roundToInt() / 20f },
+            onValueChange = {
+                val v = (it * 20).roundToInt() / 20f
+                if (v != local) view.tick()
+                local = v
+            },
             onValueChangeFinished = { onChange(local) },
             valueRange = 0.8f..1.6f,
             steps = 15,
@@ -289,7 +298,7 @@ private fun ApiKeyCard(stored: String?) {
             visualTransformation = if (visible) VisualTransformation.None else PasswordVisualTransformation(),
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password, autoCorrectEnabled = false),
             trailingIcon = {
-                IconButton(onClick = { visible = !visible }) {
+                IconButton(onClick = haptic { visible = !visible }) {
                     Icon(if (visible) Icons.Default.VisibilityOff else Icons.Default.Visibility, stringResource(if (visible) R.string.hide else R.string.show))
                 }
             },
@@ -297,12 +306,12 @@ private fun ApiKeyCard(stored: String?) {
         )
         Spacer(Modifier.height(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            Button(onClick = { c.secrets.save(input); input = ""; status = true to context.getString(R.string.api_key_stored) }, enabled = input.length >= 10) {
+            Button(onClick = haptic { c.secrets.save(input); input = ""; status = true to context.getString(R.string.api_key_stored) }, enabled = input.length >= 10) {
                 Text(stringResource(R.string.save))
             }
             FilledTonalButton(
                 enabled = !testing && (input.isNotBlank() || stored != null),
-                onClick = {
+                onClick = haptic {
                     testing = true
                     scope.launch {
                         status = try {
@@ -315,14 +324,14 @@ private fun ApiKeyCard(stored: String?) {
                     }
                 },
             ) { Text(stringResource(if (testing) R.string.testing else R.string.test_connection)) }
-            if (stored != null) OutlinedButton(onClick = { confirmRemove = true }) { Text(stringResource(R.string.remove)) }
+            if (stored != null) OutlinedButton(onClick = haptic { confirmRemove = true }) { Text(stringResource(R.string.remove)) }
         }
         status?.let { (ok, msg) ->
             Text(msg, Modifier.padding(top = 6.dp), color = if (ok) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodyMedium)
         }
         Text(
             stringResource(R.string.get_key_hint),
-            Modifier.padding(top = 6.dp).clickable { app.olenva.chat.openExternal(context, "https://openrouter.ai/keys") },
+            Modifier.padding(top = 6.dp).clickable(onClick = haptic { app.olenva.chat.openExternal(context, "https://openrouter.ai/keys") }),
             style = MaterialTheme.typography.bodySmall,
             color = MaterialTheme.colorScheme.primary,
         )
@@ -331,8 +340,8 @@ private fun ApiKeyCard(stored: String?) {
         AlertDialog(
             onDismissRequest = { confirmRemove = false },
             text = { Text(stringResource(R.string.remove_key_confirm)) },
-            confirmButton = { TextButton(onClick = { c.secrets.clear(); confirmRemove = false; status = null }) { Text(stringResource(R.string.remove)) } },
-            dismissButton = { TextButton(onClick = { confirmRemove = false }) { Text(stringResource(R.string.cancel)) } },
+            confirmButton = { TextButton(onClick = haptic { c.secrets.clear(); confirmRemove = false; status = null }) { Text(stringResource(R.string.remove)) } },
+            dismissButton = { TextButton(onClick = haptic { confirmRemove = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
@@ -341,7 +350,7 @@ private fun ApiKeyCard(stored: String?) {
 private fun AdvancedParams(s: AppSettings, model: app.olenva.net.ModelInfo?, update: ((AppSettings) -> AppSettings) -> Unit) {
     var open by remember { mutableStateOf(false) }
     fun supported(p: String) = model == null || model.supports(p)
-    Row(Modifier.fillMaxWidth().clickable { open = !open }.padding(horizontal = 20.dp, vertical = 14.dp)) {
+    Row(Modifier.fillMaxWidth().clickable(onClick = haptic { open = !open }).padding(horizontal = 20.dp, vertical = 14.dp)) {
         Column(Modifier.weight(1f)) {
             Text(stringResource(R.string.advanced), style = MaterialTheme.typography.bodyLarge)
             Text(stringResource(R.string.advanced_desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -359,49 +368,10 @@ private fun AdvancedParams(s: AppSettings, model: app.olenva.net.ModelInfo?, upd
         Spacer(Modifier.height(12.dp))
         NullableSlider(R.string.temperature, s.temperature, 0f..2f, 1f, supported("temperature")) { v -> update { it.copy(temperature = v) } }
         NullableSlider(R.string.top_p, s.topP, 0f..1f, 1f, supported("top_p")) { v -> update { it.copy(topP = v) } }
-        OutlinedTextField(
-            value = s.maxTokens?.toString() ?: "",
-            onValueChange = { v -> update { it.copy(maxTokens = v.filter(Char::isDigit).take(7).toIntOrNull()) } },
-            label = { Text(stringResource(R.string.max_tokens)) },
-            placeholder = { Text(stringResource(R.string.model_default)) },
-            singleLine = true,
-            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-            enabled = supported("max_tokens"),
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(8.dp))
-        if (model?.supports("reasoning") != false) {
-            ChoiceRowCompact(
-                R.string.reasoning,
-                listOf("default" to R.string.model_default_short, "none" to R.string.off, "low" to R.string.low, "medium" to R.string.medium, "high" to R.string.high),
-                s.reasoning,
-            ) { v -> update { it.copy(reasoning = v) } }
-        } else {
-            Text(stringResource(R.string.reasoning_unsupported), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        }
         Text(stringResource(R.string.params_note), Modifier.padding(vertical = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        TextButton(onClick = {
-            update { it.copy(temperature = null, topP = null, maxTokens = null, reasoning = "default", systemPrompt = "") }
+        TextButton(onClick = haptic {
+            update { it.copy(temperature = null, topP = null, systemPrompt = "") }
         }) { Text(stringResource(R.string.reset_params)) }
-    }
-}
-
-@Composable
-private fun ChoiceRowCompact(title: Int, options: List<Pair<String, Int>>, value: String, onChange: (String) -> Unit) {
-    Column(Modifier.padding(vertical = 6.dp)) {
-        Text(stringResource(title), style = MaterialTheme.typography.bodyLarge)
-        Spacer(Modifier.height(6.dp))
-        SingleChoiceSegmentedButtonRow(Modifier.fillMaxWidth()) {
-            options.forEachIndexed { i, (k, label) ->
-                SegmentedButton(
-                    selected = k == value,
-                    onClick = { onChange(k) },
-                    shape = SegmentedButtonDefaults.itemShape(i, options.size),
-                    label = { Text(stringResource(label), maxLines = 1, style = MaterialTheme.typography.labelMedium) },
-                    icon = {},
-                )
-            }
-        }
     }
 }
 
@@ -411,7 +381,7 @@ private fun NullableSlider(title: Int, value: Float?, range: ClosedFloatingPoint
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text(stringResource(title), style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
             Text(value?.let { String.format(Locale.US, "%.2f", it) } ?: stringResource(R.string.model_default_short), style = MaterialTheme.typography.labelLarge)
-            Switch(checked = value != null, onCheckedChange = { onChange(if (it) fallback else null) }, enabled = enabled, modifier = Modifier.padding(start = 8.dp))
+            Switch(checked = value != null, onCheckedChange = hapticToggle { onChange(if (it) fallback else null) }, enabled = enabled, modifier = Modifier.padding(start = 8.dp))
         }
         if (value != null && enabled) {
             Slider(value = value, onValueChange = { onChange((it * 20).roundToInt() / 20f) }, valueRange = range)
@@ -478,7 +448,7 @@ private fun DataSection(onDataCleared: () -> Unit) {
             title = { Text(stringResource(R.string.clear_all)) },
             text = { Text(stringResource(R.string.clear_all_confirm)) },
             confirmButton = {
-                TextButton(onClick = {
+                TextButton(onClick = haptic {
                     confirmClear = false
                     scope.launch {
                         c.dao.deleteAllConversations()
@@ -490,14 +460,14 @@ private fun DataSection(onDataCleared: () -> Unit) {
                     }
                 }) { Text(stringResource(R.string.delete), color = MaterialTheme.colorScheme.error) }
             },
-            dismissButton = { TextButton(onClick = { confirmClear = false }) { Text(stringResource(R.string.cancel)) } },
+            dismissButton = { TextButton(onClick = haptic { confirmClear = false }) { Text(stringResource(R.string.cancel)) } },
         )
     }
 }
 
 @Composable
 private fun ActionRow(title: Int, desc: Int?, danger: Boolean = false, onClick: () -> Unit) {
-    Column(Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 12.dp)) {
+    Column(Modifier.fillMaxWidth().clickable(onClick = haptic(onClick)).padding(horizontal = 20.dp, vertical = 12.dp)) {
         Text(stringResource(title), style = MaterialTheme.typography.bodyLarge, color = if (danger) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
         if (desc != null) Text(stringResource(desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }

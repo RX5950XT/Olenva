@@ -139,7 +139,6 @@
 
     <!-- editor -->
     <string name="mode_auto">Auto enhance</string>
-    <string name="mode_original">Original</string>
     <string name="crop">Crop</string>
     <string name="rotate">Rotate</string>
     <string name="crop_hint">Drag the four corners to the page edges</string>
@@ -182,19 +181,16 @@
     <string name="show_usage">Show usage &amp; cost</string>
     <string name="show_usage_desc">Token counts and the cost OpenRouter reports, under each answer</string>
     <string name="advanced">Advanced model parameters</string>
-    <string name="advanced_desc">System prompt, temperature, output limit, reasoning effort</string>
+    <string name="advanced_desc">System prompt, temperature, top P</string>
     <string name="system_prompt">System prompt</string>
     <string name="temperature">Temperature</string>
     <string name="top_p">Top P</string>
-    <string name="max_tokens">Max output tokens</string>
-    <string name="model_default">Use the model default</string>
     <string name="model_default_short">Default</string>
-    <string name="reasoning">Reasoning effort</string>
-    <string name="reasoning_unsupported">The default model has no reasoning options</string>
+    <string name="effort_hint">Hold, then slide sideways to change thinking effort</string>
+    <string name="reasoning">Thinking</string>
     <string name="param_unsupported">Not supported by the default model</string>
-    <string name="params_note">Parameters are only sent when the model supports them. Reasoning tokens also count toward the output limit.</string>
+    <string name="params_note">Parameters are only sent when the model supports them. Replies can use the full output length of the model.</string>
     <string name="reset_params">Reset parameters</string>
-    <string name="off">Off</string>
     <string name="low">Low</string>
     <string name="medium">Med</string>
     <string name="high">High</string>

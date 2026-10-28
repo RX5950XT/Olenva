@@ -43,6 +43,7 @@ data class ModelInfo(
     val supportedParameters: List<String>,
     val created: Long? = null,     // epoch seconds when OpenRouter listed it
     val outputModalities: List<String> = emptyList(),
+    val maxOutput: Int? = null,    // longest reply the top provider allows
 ) {
     val supportsImages get() = "image" in inputModalities
     val supportsFiles get() = "file" in inputModalities
@@ -86,6 +87,7 @@ class OpenRouter(private val http: OkHttpClient = defaultClient()) {
                 supportedParameters = o["supported_parameters"]?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
                 created = o["created"]?.jsonPrimitive?.longOrNull,
                 outputModalities = arch?.get("output_modalities")?.jsonArray?.mapNotNull { it.jsonPrimitive.contentOrNull } ?: emptyList(),
+                maxOutput = (o["top_provider"] as? JsonObject)?.get("max_completion_tokens")?.jsonPrimitive?.intOrNull,
             )
         }.filter { it.id.isNotEmpty() }
 

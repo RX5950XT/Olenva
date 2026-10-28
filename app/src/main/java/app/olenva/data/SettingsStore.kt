@@ -18,6 +18,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 
 const val DEFAULT_MODEL = "google/gemini-3.8-flash"
+val EFFORTS = listOf("low", "medium", "high")
 
 data class AppSettings(
     val theme: String = "system",          // system | light | dark
@@ -30,8 +31,7 @@ data class AppSettings(
     val customModels: List<String> = emptyList(),
     val temperature: Float? = null,
     val topP: Float? = null,
-    val maxTokens: Int? = null,
-    val reasoning: String = "default",      // default | none | low | medium | high
+    val reasoning: String = "high",         // low | medium | high
     val systemPrompt: String = "",
     val showUsage: Boolean = true,
     val autoScan: Boolean = true,
@@ -56,7 +56,6 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val customModels = stringPreferencesKey("customModels")
         val temperature = floatPreferencesKey("temperature")
         val topP = floatPreferencesKey("topP")
-        val maxTokens = intPreferencesKey("maxTokens")
         val reasoning = stringPreferencesKey("reasoning")
         val systemPrompt = stringPreferencesKey("systemPrompt")
         val showUsage = booleanPreferencesKey("showUsage")
@@ -80,8 +79,8 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             customModels = this[K.customModels].toList(),
             temperature = this[K.temperature],
             topP = this[K.topP],
-            maxTokens = this[K.maxTokens],
-            reasoning = this[K.reasoning] ?: d.reasoning,
+            // Older versions also stored "default" and "none"; those now fall back to high.
+            reasoning = this[K.reasoning]?.takeIf { it in EFFORTS } ?: d.reasoning,
             systemPrompt = this[K.systemPrompt] ?: d.systemPrompt,
             showUsage = this[K.showUsage] ?: d.showUsage,
             autoScan = this[K.autoScan] ?: d.autoScan,
@@ -105,7 +104,7 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         // Drop what older versions stored for retired settings (recent models, per-page enhance mode, shutter sound).
         scope.launch {
             context.dataStore.edit { p -> listOf("recents", "enhanceMode").forEach { p.remove(stringPreferencesKey(it)) }
-                p.remove(booleanPreferencesKey("shutterSound")) }
+                p.remove(booleanPreferencesKey("shutterSound")); p.remove(intPreferencesKey("maxTokens")) }
         }
     }
 
@@ -122,7 +121,6 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             p[K.customModels] = s.customModels.joinToString("\n")
             s.temperature?.let { p[K.temperature] = it } ?: p.remove(K.temperature)
             s.topP?.let { p[K.topP] = it } ?: p.remove(K.topP)
-            s.maxTokens?.let { p[K.maxTokens] = it } ?: p.remove(K.maxTokens)
             p[K.reasoning] = s.reasoning
             p[K.systemPrompt] = s.systemPrompt
             p[K.showUsage] = s.showUsage

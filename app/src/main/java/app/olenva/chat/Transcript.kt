@@ -6,6 +6,7 @@ import android.content.Intent
 import android.graphics.Color
 import android.net.Uri
 import android.util.Log
+import android.view.HapticFeedbackConstants
 import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebResourceResponse
@@ -97,6 +98,7 @@ fun Transcript(
                 @JavascriptInterface fun openLink(url: String) { post { openExternal(context, url) } }
                 @JavascriptInterface fun onMath(tex: String) { post { cb.onMath(tex) } }
                 @JavascriptInterface fun openDrawer() { post { cb.onOpenDrawer() } }
+                @JavascriptInterface fun haptic() { post { performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY) } }
             }, "Android")
             loadUrl("$HOST/assets/web/chat.html" + if (reading.dark) "?dark=1" else "")
         }

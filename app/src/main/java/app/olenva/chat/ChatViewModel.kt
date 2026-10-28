@@ -428,10 +428,9 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             putJsonObject("usage") { put("include", true) }
             if (s.temperature != null && ok("temperature")) put("temperature", s.temperature)
             if (s.topP != null && ok("top_p")) put("top_p", s.topP)
-            if (s.maxTokens != null && ok("max_tokens")) put("max_tokens", s.maxTokens)
-            if (s.reasoning != "default" && info?.supports("reasoning") == true) {
-                putJsonObject("reasoning") { put("effort", s.reasoning) }
-            }
+            // The model's full output room: thinking budgets are a share of it, so a small cap would starve the answer.
+            if (info?.maxOutput != null && ok("max_tokens")) put("max_tokens", info.maxOutput)
+            if (info?.supports("reasoning") == true) putJsonObject("reasoning") { put("effort", s.reasoning) }
             // Models without native PDF input get OpenRouter's free text extraction instead of a paid OCR default.
             if (hasPdf && info?.supportsFiles != true) {
                 put("plugins", JsonArray(listOf(buildJsonObject {
@@ -441,6 +440,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
     }
+
+    fun setEffort(effort: String) = viewModelScope.launch { c.settings.update { it.copy(reasoning = effort) } }
 
     private fun textPart(t: String) = buildJsonObject { put("type", "text"); put("text", t) }
 

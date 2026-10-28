@@ -51,6 +51,8 @@ import app.olenva.ui.OlenvaTheme
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import androidx.compose.ui.platform.LocalView
+import app.olenva.ui.confirm
 
 class MainActivity : AppCompatActivity() {
     private val vm: ChatViewModel by viewModels()
@@ -110,6 +112,7 @@ private data class EditorTarget(val attachment: Attachment, val editable: Boolea
 @Composable
 private fun Root(vm: ChatViewModel) {
     val context = LocalContext.current
+    val view = LocalView.current
     val scope = rememberCoroutineScope()
     var settingsOpen by rememberSaveable { mutableStateOf(false) }
     var scannerOpen by rememberSaveable { mutableStateOf(false) }
@@ -169,7 +172,7 @@ private fun Root(vm: ChatViewModel) {
         ScannerScreen(
             settings = settings,
             active = editor == null,
-            onDone = { pages -> vm.addAttachments(pages); scannerOpen = false },
+            onDone = { pages -> vm.addAttachments(pages); if (pages.isNotEmpty()) view.confirm(); scannerOpen = false },
             onClose = { scannerOpen = false },
             onEditPage = { a, cb -> editor = EditorTarget(a, true, cb) },
         )

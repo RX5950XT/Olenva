@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- New chat: an open square with a pencil over its corner. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:pathData="M11,4H6.5A2.5,2.5 0,0 0,4 6.5v11A2.5,2.5 0,0 0,6.5 20h11a2.5,2.5 0,0 0,2.5 -2.5V13"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+    <path
+        android:pathData="M17.6,3.4a2,2 0,0 1,2.9 2.9L12.4,14.4 9,15l0.6,-3.4z"
+        android:strokeWidth="2"
+        android:strokeColor="#FF000000"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round" />
+</vector>
