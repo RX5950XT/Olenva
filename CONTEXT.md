@@ -10,11 +10,13 @@
 - 拍照：`CAPTURE_MODE_MINIMIZE_LATENCY`，Pixel 6a 上約 0.3 秒（最高畫質模式每張都重新對焦，約 1.7 秒）；偵測到紙或紙移動時對紙張中心對焦。音量鍵當快門（`MainActivity.volumeShutter`，編輯頁開著時停用）。快門音已移除。
 - 貼邊：`scan/EdgeSnap.kt` 在模型給的四邊兩側各 4%（長邊）範圍內，沿邊取 60 個剖面找「往紙內變亮」最大的階梯（兩側各平均 6 px，比筆畫寬，所以筆跡不會被當成紙邊），擬合直線後取相鄰兩線交點當新角；某邊找不到清楚的邊（白紙放白桌）就保留模型的角。在 1600 px 灰階圖上跑，約 100 ms。拍照與編輯的自動偵測都會經過它。
 - 文件偵測：`DocDetector` 用 DocAligner（Apache-2.0）的 lcnet100 熱圖模型（`assets/docaligner_lcnet100.onnx`，4.7 MB）找四個角，跑在 App 原本就有的 OpenCV DNN（FP16；Pixel 6a 上 2 條執行緒約 50 ms、預設 8 條約 130 ms）。OpenCV 執行緒數只在載入模型時設一次（4 條），絕對不要每次偵測前後切換：切換會重建執行緒池，若拍照處理正在另一條執行緒跑濾波就會 SIGSEGV（2026-10-29 實機當機過）。紙面積門檻 4%（超廣角下紙常只佔一小塊，12% 會擋掉）。模型輸入尺寸寫死 256，不能改小。原始模型 OpenCV 讀不了，轉換用 `tools/docaligner_to_opencv.py`。舊的邊緣輪廓法在 227 張真實照片上四角誤差 <2% 只有 27%，模型 56%，且常出現超出畫面的錯框，已移除。模型在 App 啟動時背景載入，載入前偵測回傳 null。
-- 自動增強（`auto`）：背景估計核 邊長/30（其他模式 /18）；白點 = 紙面中位數 − 3σ（225～250，紙面雜訊大就切深、乾淨就保留淡字）；黑點跟著附近墨色走（斜拍時遠端的字較灰），gamma 2；再以紙面平均色去偏色。固定白點 238 曾把斜拍遠端的淡字洗掉。
+- 自動增強（`auto`）：背景估計核 邊長/30（其他模式 /18）；白點 = 紙面中位數 − 3σ（225～250，紙面雜訊大就切深、乾淨就保留淡字）；黑點跟著附近墨色走（斜拍時遠端的字較灰）；gamma 依附近墨色逐點決定（`inkGamma`：深墨 1、淡墨到 2），因為固定 gamma 2 會把筆畫多的中文字中間的空隙填滿、黏成一團；銳化強度 0.3（0.6 會糊字）；再以紙面平均色去偏色。固定白點 238 曾把斜拍遠端的淡字洗掉。編輯頁只有一個「自動增強」開關（開＝auto、關＝original）（2026-10-29）。
 - 裁切比例：`DocProcessor.aspect` 用 Zhang & He（2007）從四角推回紙的真實長寬比，斜拍不再把直式 A4 壓成橫式；焦距能從四角算出就用，算不出（紙上下邊在照片裡平行）時假設 0.55 × 長邊（預設 0.6× 廣角實測 0.51～0.53）。
 - 低角度：曾試過依重力感測器把預覽轉成俯視再偵測，模擬顯示多抓到的框大多是錯的（斜 50° 時錯框 3% → 21%），已移除；錯框比沒框糟。
 - 即時框線：`scan/QuadTracker.kt` 負責穩定（小抖動取平均、離目前框很遠的偵測要連續出現 3 次才跟、偶爾漏一幀保留 400 ms）。穩定判斷與自動拍攝都用平滑後的框；框在 200 ms 內移動 < 2.5% 算穩定，再穩 300 ms 就拍（原本 300＋500 ms，使用者嫌慢）。改偵測參數前先跑 `QuadTrackerTest`。
-- 側邊欄：`ModalNavigationDrawer` 關閉時停用手勢（它的拖曳會搶 WebView 的上下捲動），改由 `chat.js` 偵測「快速的向右甩」呼叫 `Android.openDrawer()`（140 ms 內向右 100 CSS px、上下偏移 ≤ 24 px）；起點在可橫向捲動的公式／表格／程式碼上時一律不觸發。
+- 側邊欄：`ModalNavigationDrawer` 關閉時停用手勢（它的拖曳會搶 WebView 的上下捲動），改由 `chat.js` 偵測「快速的向右甩」呼叫 `Android.openDrawer()`（140 ms 內向右 100 CSS px、上下偏移 ≤ 24 px）；起點在可橫向捲動的公式／表格／程式碼上時一律不觸發。收起用 `HistoryDrawer` 的 `swipeToClose`：在 Initial pass 先判方向，上下交給列表、往左才接手並跟手，48 dp 或快甩就收；M3 1.4 原生門檻是半個寬度且無法調整（2026-10-29）。
+- 震動：所有點擊經 `ui/Haptics.kt` 的 `haptic {}`／`hapticToggle {}`，有段位的滑桿每跨一格 `View.tick()`，掃描頁放進輸入框 `View.confirm()`；WebView 內按鈕由 `chat.js` 呼叫 `Android.haptic()`。新按鈕請沿用；只包在最底層的元件，否則會震兩次。快門保留自己的拍照震動（受「拍攝時震動回饋」控制），其餘跟系統觸碰回饋開關。
+- 思考強度與輸出上限：`AppSettings.reasoning` 只有 low／medium／high（預設 high，舊值 default／none 讀取時轉 high），模型支援 reasoning 就一律送 `reasoning.effort`。`max_tokens` 一律送模型的 `top_provider.max_completion_tokens`：OpenRouter 對 Claude 等「只吃思考長度」的模型把 effort 換算成 max_tokens 的比例（高 80%），上限太小會把回答擠掉。代價是餘額很低時 OpenRouter 可能以「付不起最長回覆」拒絕（402）（2026-10-29）。
 - 模型選單：只列 `created` 在 92 天內、支援圖片輸入、`supported_parameters` 含 reasoning 與 tools、上下文 ≥128K、輸出含 text 且不含 image、id 不以 `:batch` 結尾的模型（2026-10-28 起，「支援圖片」篩選鈕已拿掉）；依 id 前綴分組，主流開發商依 `LAB_ORDER` 排前，其餘 A→Z 收在「其他開發商」摺疊區（預設收起，搜尋時自動展開）。自訂 ID、收藏不受這些限制；「最近使用」已移除（2026-10-28）。
-- 未完成：P2 全部；多頁掃描中途被系統殺掉時，尚未加入輸入框的頁面不會恢復；release 仍用 debug key 簽名。
+- 未完成：P2 全部；多頁掃描中途被系統殺掉時，尚未加入輸入框的頁面不會恢復；release 仍用 debug key 簽名（GitHub Releases 的 APK 也是，換正式 keystore 後舊版需先解除安裝）。
 - 日常使用裝 release（`assembleRelease`，R8＋baseline profile）：冷啟動 ~0.3 s，debug ~1.2 s。兩者同簽章，可直接覆蓋安裝、保留資料。

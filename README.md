@@ -1,53 +1,101 @@
 # Olenva
 
-極簡的 Android AI 聊天 App，特色是**在聊天輸入框直接展開相機、自動掃描紙本**，把裁切、校正、增強後的照片放進輸入框，由你補充問題再送出。模型透過 OpenRouter 使用，數學公式以 KaTeX 完整渲染。
+拍下紙本題目、直接問 AI 的 Android 聊天 App。
 
-## 主要功能
+在輸入框旁按「掃描」就會打開相機，自動找出紙張、拍照、裁切、轉正、讓字更清楚，照片放進輸入框後再補上你的問題送出。模型透過 [OpenRouter](https://openrouter.ai) 使用，數學公式以 KaTeX 完整渲染。
 
-- **聊天**：串流回答、停止／重新生成、編輯重送、引用、複製、分享、查看原始內容；推理模型的思考過程可展開。
-- **掃描**：App 內相機（預設超廣角）、即時文件邊界偵測（裝置上的 AI 角點模型，雜亂桌面、斜拍、手拿都抓得到）、偵測到紙就對紙張對焦、畫面穩定後自動拍攝、音量鍵當快門、不播快門音、單頁／多頁（同一頁不會重複拍）、手動模式。
-- **影像處理**（OpenCV）：透視校正、四邊貼齊紙張邊緣、自動轉正（裝置上的文件方向模型看版面判斷上下，手寫也適用；模型沒把握時依拍照當下手機的方向）、去陰影、對比與銳化；模式：自動增強（依頁面自動決定白點與黑點；筆跡保留原本顏色，藍筆仍是藍色）／原始彩色。保留原圖，送出前可重新裁切（拖曳四角）、旋轉、切換模式。
-- **公式與 Markdown**：公式先從 Markdown 抽出再交給 KaTeX，錯誤公式退回可讀原文（不出現紅字）；串流中未完成的公式先以淡色原文顯示，不閃爍；寬公式、表格、程式碼可水平捲動並有邊緣淡出提示；點公式可複製 LaTeX。
-- **OpenRouter**：API Key 以 Android Keystore 加密保存、測試連線；模型清單即時更新（只列近 3 個月推出、支援圖片、推理與工具呼叫、上下文 128K 以上的文字模型（不含 `:batch` 版本），主流開發商排前面（Google、Anthropic、OpenAI、xAI、Meta、Moonshot、DeepSeek、GLM、Qwen、MiniMax、小米），其餘開發商收在預設收起的「其他開發商」、可自行新增模型 ID；搜尋、收藏、預設模型、價格與上下文長度）；送圖給不支援圖片的模型前會攔下並提供切換。
-- **用量**：每則回答顯示 token 與 OpenRouter 回報費用（BYOK 會加上上游費用），只有估算時會標「估算」。
-- **紀錄**：對話自動命名、搜尋、重新命名、刪除；草稿自動保存；匯出 Markdown、含附件的 zip 備份與匯入。
-- **附件**：相簿、檔案（JPG／PNG／WebP／PDF／TXT／MD）、從其他 App 分享進來。
-- **閱讀設定**：對話字體大小（含即時預覽，公式一起縮放）、淺色／深色／跟隨系統、介面密度、繁體中文／English。
+## 下載安裝
 
-## 建置
+到 [Releases](../../releases/latest) 下載 `Olenva-<版本>-arm64.apk`，在手機上開啟安裝。
 
-需求：Android SDK（compileSdk 37）、JDK 21（Android Studio 內建 JBR 即可）。
+- 需要 Android 8.0 以上、64 位元 ARM 手機（近幾年的手機都是）。
+- 第一次安裝時系統會要你允許「安裝不明來源的應用程式」。
+- 安裝後到「設定」貼上 OpenRouter API Key（沒有的話到 [openrouter.ai/keys](https://openrouter.ai/keys) 建立）。
+
+## 功能
+
+### 掃描紙本
+
+- App 內相機，預設超廣角；音量鍵當快門、不播快門音。
+- 即時找出紙張四角（裝置上的 AI 模型，雜亂桌面、斜拍、手拿都抓得到），畫面穩定後自動拍；也可切手動。
+- 單頁或多頁連拍，同一頁不會重複拍。
+- 自動處理：透視校正、四邊貼齊紙邊、依真實比例裁切、自動轉正（看版面判斷上下，手寫也適用）。
+- 自動增強：去陰影、提高對比與清晰度，淡的筆畫加深、密集的中文字不黏在一起；筆跡保留原本顏色。
+- 送出前可重新裁切（拖曳四角）、旋轉，或用開關切回原始色彩；原圖會保留到送出為止。
+
+### 聊天
+
+- 串流回答、停止、重新生成、編輯重送、引用、複製、分享、查看原始內容。
+- 推理模型的思考過程可展開查看。
+- **思考強度**：長按輸入框的「大腦」按鈕，左右滑動選低／中／高（預設高），放開就套用。
+- 回覆長度上限直接用模型支援的最大值，不用自己設。
+- 公式、表格、程式碼可水平捲動；點公式可複製 LaTeX；錯誤公式退回可讀原文，不出現紅字。
+- 每則回答顯示 token 數與 OpenRouter 回報的費用。
+
+### 模型
+
+- 模型清單即時更新：只列近 3 個月推出、能看圖、會推理、支援工具呼叫、上下文 128K 以上的模型。
+- 主流開發商排前面，其餘收在「其他開發商」；可搜尋、收藏、設預設，也能手動加模型 ID。
+- 送圖給不能看圖的模型前會先攔下，提供切換。
+
+### 其他
+
+- 對話紀錄：自動命名、搜尋、重新命名、刪除；側邊欄往左一滑就收起。
+- 草稿自動保存；可匯出 Markdown、含附件的 zip 備份並匯入。
+- 附件：相簿、檔案（JPG／PNG／WebP／PDF／TXT／MD）、從其他 App 分享進來。
+- 所有按鈕、選單、開關都有震動回饋（跟著系統「觸碰回饋」開關）。
+- 對話字體大小（含即時預覽）、淺色／深色／跟隨系統、繁體中文／English。
+
+## 隱私
+
+- 送出的文字與附件會交給 OpenRouter 及所選模型的提供商處理。
+- 掃描完不會自動送出，照片不會存進手機相簿。
+- API Key 以 Android Keystore 加密保存，不會出現在匯出或備份裡。
+- 文件偵測與轉正都在手機上跑，不會上傳。
+
+## 自己建置
+
+需要 Android SDK（compileSdk 37）與 JDK 21（Android Studio 內建的 JBR 即可）。
 
 ```bash
-./gradlew :app:assembleDebug      # app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
-./gradlew :app:assembleRelease    # arm64 約 33 MB（目前以 debug key 簽名，上架前需換正式 keystore）
-adb install -r app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+./gradlew :app:assembleRelease   # app/build/outputs/apk/release/app-arm64-v8a-release.apk
+./gradlew :app:assembleDebug     # 開發用，啟動較慢
+adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ```
 
-依 ABI 分包（arm64-v8a、x86_64），因為 OpenCV 原生庫很大。
+- 依 CPU 架構分包（arm64-v8a、x86_64），因為 OpenCV 原生庫很大。
+- release 目前用本機的 debug key 簽名；自己建置的版本無法覆蓋安裝 Releases 上的版本（簽名不同），反之亦然。
 
 ## 測試
 
 ```bash
-node tools/render-test.js         # Markdown + LaTeX 渲染回歸測試（20 項）
 ./gradlew :app:testDebugUnitTest   # 文件方向、貼邊、框線穩定、角點解碼、裁切比例、模型清單
+node tools/render-test.js          # Markdown + LaTeX 渲染回歸測試
 ```
 
-## 架構
+## 程式架構
+
+原生 Kotlin + Jetpack Compose，單一 `app` 模組。
 
 | 位置 | 內容 |
 |---|---|
-| `chat/` | `ChatViewModel`（送出、串流、重試、草稿、標題）、`ChatScreen`、`Transcript`（WebView 橋接）、`HistoryDrawer` |
-| `scan/` | `ScannerScreen`（CameraX）、`DocAnalyzer`（即時偵測與穩定判斷）、`DocVision`（OpenCV 偵測／校正／增強）、`ScanPipeline`、`AttachmentEditor` |
+| `chat/` | `ChatViewModel`（送出、串流、重試、草稿、標題）、`ChatScreen`（輸入框、思考強度）、`Transcript`（WebView 橋接）、`HistoryDrawer` |
+| `scan/` | `ScannerScreen`（CameraX）、`DocAnalyzer`（即時偵測）、`QuadTracker`（框線穩定）、`EdgeSnap`（貼邊）、`DocVision`（OpenCV 校正與增強）、`Orientation`（轉正）、`ScanPipeline`、`AttachmentEditor` |
 | `net/OpenRouter.kt` | 模型清單、金鑰檢查、SSE 串流、錯誤分類 |
 | `data/` | Room（對話、訊息、草稿）、DataStore 設定、Keystore 金鑰、附件儲存、備份 |
 | `settings/` | 設定頁、模型選擇器 |
+| `ui/` | 主題、震動回饋 |
 | `assets/web/` | 對話渲染頁：markdown-it、KaTeX（含 mhchem）、highlight.js、morphdom，全部離線打包 |
 
-第三方模型：文件角點偵測使用 [DocAligner](https://github.com/DocsaidLab/DocAligner)（Apache-2.0，授權見 `third_party/DocAligner/LICENSE`）；為了讓 OpenCV 讀取，已用 `tools/docaligner_to_opencv.py` 改寫部分運算節點，輸出結果不變。文件方向判斷使用 PaddleOCR 的 [PP-LCNet_x1_0_doc_ori](https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_doc_ori_onnx)（Apache-2.0，授權見 `third_party/PP-LCNet_doc_ori/LICENSE`），官方 ONNX 原檔，未修改。
+開發筆記（設計理由、踩過的坑）在 [`CONTEXT.md`](CONTEXT.md)。
+
+## 第三方元件
+
+| 元件 | 用途 | 授權 |
+|---|---|---|
+| [DocAligner](https://github.com/DocsaidLab/DocAligner) lcnet100 | 找紙張四角；用 `tools/docaligner_to_opencv.py` 改寫部分運算節點讓 OpenCV 能讀，輸出不變 | Apache-2.0（`third_party/DocAligner/LICENSE`） |
+| PaddleOCR [PP-LCNet_x1_0_doc_ori](https://huggingface.co/PaddlePaddle/PP-LCNet_x1_0_doc_ori_onnx) | 判斷頁面上下方向；官方 ONNX 原檔 | Apache-2.0（`third_party/PP-LCNet_doc_ori/LICENSE`） |
+| [OpenCV](https://opencv.org) | 影像處理、執行上面兩個模型 | Apache-2.0 |
+| KaTeX、markdown-it、highlight.js、morphdom | 對話渲染 | MIT／BSD-3-Clause |
 
 參考專案：[RikkaHub](https://github.com/rikkahub/rikkahub)（同樣以 WebView + KaTeX 渲染公式）。
-
-## 隱私
-
-送出的文字與附件會交由 OpenRouter 及所選模型的提供商處理。掃描完成不會自動送出，照片不會存進公開相簿；API Key 不會出現在匯出或備份中。
