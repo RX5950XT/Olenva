@@ -12,7 +12,7 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 @Serializable
-private data class BackupFile(val version: Int, val conversations: List<BackupConversation>)
+private data class BackupFile(val version: Int, val conversations: List<BackupConversation>, val apiKey: String? = null)
 
 @Serializable
 private data class BackupConversation(
@@ -28,8 +28,14 @@ private data class BackupMessage(
     val cost: Double? = null, val finishReason: String? = null, val createdAt: Long,
 )
 
-/** Markdown export and a zip backup (JSON + attachment files). The API key is never part of either. */
-class Backup(private val dao: ChatDao, private val store: AttachmentStore) {
+/** What [Backup.readZip] restored. */
+data class Imported(val conversations: Int, val keyRestored: Boolean)
+
+/**
+ * Markdown export and a zip backup (JSON + attachment files). The API key goes into the zip only when the user ticks
+ * it for a full export, in plain text, so it survives a reinstall; per-conversation exports never carry it.
+ */
+class Backup(private val dao: ChatDao, private val store: AttachmentStore, private val secrets: SecretStore) {
     private val json = Json { ignoreUnknownKeys = true; prettyPrint = true }
 
     fun markdown(c: ConversationEntity, messages: List<MessageEntity>, userLabel: String, aiLabel: String): String = buildString {
@@ -43,7 +49,7 @@ class Backup(private val dao: ChatDao, private val store: AttachmentStore) {
         }
     }
 
-    suspend fun writeZip(out: OutputStream, ids: List<String>?) {
+    suspend fun writeZip(out: OutputStream, ids: List<String>?, includeKey: Boolean = false) {
         val convs = dao.allConversations().filter { ids == null || it.id in ids }
         val files = mutableSetOf<String>()
         val data = BackupFile(1, convs.map { c ->
@@ -52,7 +58,7 @@ class Backup(private val dao: ChatDao, private val store: AttachmentStore) {
                 BackupMessage(m.id, m.role, m.content, m.reasoning, m.attachmentList, m.modelId, m.status, m.error,
                     m.promptTokens, m.completionTokens, m.cost, m.finishReason, m.createdAt)
             })
-        })
+        }, apiKey = if (includeKey) secrets.apiKey.value else null)
         ZipOutputStream(out).use { zip ->
             zip.putNextEntry(ZipEntry("olenva-backup.json"))
             zip.write(json.encodeToString(BackupFile.serializer(), data).toByteArray())
@@ -68,8 +74,8 @@ class Backup(private val dao: ChatDao, private val store: AttachmentStore) {
         }
     }
 
-    /** Returns the number of conversations imported; existing ones with the same id are replaced. */
-    suspend fun readZip(input: InputStream): Int {
+    /** Existing conversations with the same id are replaced; a key in the backup replaces the stored one. */
+    suspend fun readZip(input: InputStream): Imported {
         var data: BackupFile? = null
         ZipInputStream(input).use { zip ->
             while (true) {
@@ -95,6 +101,9 @@ class Backup(private val dao: ChatDao, private val store: AttachmentStore) {
                     m.promptTokens, m.completionTokens, m.cost, m.finishReason, m.createdAt))
             }
         }
-        return d.conversations.size
+        // File content is untrusted: only a plausible single-token key is restored.
+        val key = d.apiKey?.trim()?.takeIf { it.length in 10..512 && it.none(Char::isWhitespace) }
+        key?.let(secrets::save)
+        return Imported(d.conversations.size, key != null)
     }
 }

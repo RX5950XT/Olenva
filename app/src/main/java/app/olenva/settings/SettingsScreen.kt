@@ -85,6 +85,8 @@ import app.olenva.ui.haptic
 import app.olenva.ui.hapticToggle
 import androidx.compose.ui.platform.LocalView
 import app.olenva.ui.tick
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.material3.Checkbox
 
 @Composable
 fun SettingsScreen(onClose: () -> Unit, onPickDefaultModel: () -> Unit, onDataCleared: () -> Unit) {
@@ -397,21 +399,29 @@ private fun DataSection(onDataCleared: () -> Unit) {
     val scope = rememberCoroutineScope()
     var usage by remember { mutableStateOf<Long?>(null) }
     var confirmClear by remember { mutableStateOf(false) }
+    var exportDialog by remember { mutableStateOf(false) }
+    var withKey by remember { mutableStateOf(false) }
+    val hasKey = c.secrets.apiKey.collectAsStateWithLifecycle().value != null
     fun refreshUsage() = scope.launch { usage = withContext(Dispatchers.IO) { c.attachments.usageBytes() + context.getDatabasePath("olenva.db").length() } }
     remember { refreshUsage() }
 
     val exportAll = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            val ok = runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)!!.use { c.backup.writeZip(it, null) } } }.isSuccess
+            val ok = runCatching { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)!!.use { c.backup.writeZip(it, null, withKey) } } }.isSuccess
             Toast.makeText(context, if (ok) R.string.export_done else R.string.export_failed, Toast.LENGTH_SHORT).show()
         }
     }
     val importZip = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@rememberLauncherForActivityResult
         scope.launch {
-            val n = runCatching { withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)!!.use { c.backup.readZip(it) } } }.getOrNull()
-            Toast.makeText(context, if (n != null) context.getString(R.string.import_done, n) else context.getString(R.string.import_failed), Toast.LENGTH_SHORT).show()
+            val r = runCatching { withContext(Dispatchers.IO) { context.contentResolver.openInputStream(uri)!!.use { c.backup.readZip(it) } } }.getOrNull()
+            val msg = when {
+                r == null -> context.getString(R.string.import_failed)
+                r.keyRestored -> context.getString(R.string.import_done_key, r.conversations)
+                else -> context.getString(R.string.import_done, r.conversations)
+            }
+            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
             refreshUsage()
         }
     }
@@ -434,13 +444,40 @@ private fun DataSection(onDataCleared: () -> Unit) {
             }
         }
         ActionRow(R.string.export_all, R.string.export_all_desc) {
-            exportAll.launch("olenva-backup-${SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())}.zip")
+            withKey = false
+            if (hasKey) exportDialog = true else exportAll.launch(backupName())
         }
         ActionRow(R.string.import_backup, null) { importZip.launch(arrayOf("application/zip", "application/octet-stream")) }
         ActionRow(R.string.permissions, R.string.permissions_desc) {
             context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.fromParts("package", context.packageName, null)))
         }
         ActionRow(R.string.clear_all, R.string.clear_all_desc, danger = true) { confirmClear = true }
+    }
+    if (exportDialog) {
+        AlertDialog(
+            onDismissRequest = { exportDialog = false },
+            title = { Text(stringResource(R.string.export_all)) },
+            text = {
+                Column {
+                    Row(
+                        Modifier.fillMaxWidth().toggleable(withKey, role = androidx.compose.ui.semantics.Role.Checkbox, onValueChange = hapticToggle { withKey = it }),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Checkbox(checked = withKey, onCheckedChange = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.include_key), style = MaterialTheme.typography.bodyLarge)
+                    }
+                    if (withKey) Text(
+                        stringResource(R.string.include_key_warning),
+                        Modifier.padding(top = 8.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error,
+                    )
+                }
+            },
+            confirmButton = { TextButton(onClick = haptic { exportDialog = false; exportAll.launch(backupName()) }) { Text(stringResource(R.string.export)) } },
+            dismissButton = { TextButton(onClick = haptic { exportDialog = false }) { Text(stringResource(R.string.cancel)) } },
+        )
     }
     if (confirmClear) {
         AlertDialog(
@@ -472,3 +509,5 @@ private fun ActionRow(title: Int, desc: Int?, danger: Boolean = false, onClick: 
         if (desc != null) Text(stringResource(desc), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }
+
+private fun backupName() = "olenva-backup-${SimpleDateFormat("yyyyMMdd", Locale.US).format(Date())}.zip"

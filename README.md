@@ -41,7 +41,7 @@
 ### 其他
 
 - 對話紀錄：自動命名、搜尋、重新命名、刪除；側邊欄往左一滑就收起。
-- 草稿自動保存；可匯出 Markdown、含附件的 zip 備份並匯入。
+- 草稿自動保存；可匯出 Markdown、含附件的 zip 備份並匯入（可選擇連 API Key 一起備份）。
 - 附件：相簿、檔案（JPG／PNG／WebP／PDF／TXT／MD）、從其他 App 分享進來。
 - 所有按鈕、選單、開關都有震動回饋（跟著系統「觸碰回饋」開關）。
 - 對話字體大小（含即時預覽）、淺色／深色／跟隨系統、繁體中文／English。
@@ -50,7 +50,7 @@
 
 - 送出的文字與附件會交給 OpenRouter 及所選模型的提供商處理。
 - 掃描完不會自動送出，照片不會存進手機相簿。
-- API Key 以 Android Keystore 加密保存，不會出現在匯出或備份裡。
+- API Key 以 Android Keystore 加密保存。只有在「匯出全部資料」時勾選「包含 API Key」才會放進備份檔（明文），方便換手機或重裝；這種備份檔不要分享。
 - 文件偵測與轉正都在手機上跑，不會上傳。
 
 ## 自己建置
@@ -64,7 +64,7 @@ adb install -r app/build/outputs/apk/release/app-arm64-v8a-release.apk
 ```
 
 - 依 CPU 架構分包（arm64-v8a、x86_64），因為 OpenCV 原生庫很大。
-- release 目前用本機的 debug key 簽名；自己建置的版本無法覆蓋安裝 Releases 上的版本（簽名不同），反之亦然。
+- release 的簽名金鑰從環境變數讀取：`OLENVA_KEYSTORE`（金鑰檔路徑）、`OLENVA_KEYSTORE_PASSWORD`、`OLENVA_KEY_ALIAS`（預設 `olenva`）。沒設定時改用本機的 debug key，照樣能建置安裝，但無法覆蓋安裝 Releases 上的版本（簽名不同）。
 
 ## 測試
 

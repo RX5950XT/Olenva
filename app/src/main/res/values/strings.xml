@@ -226,9 +226,12 @@
     <string name="clear_cache_desc">Remove temporary images no conversation uses</string>
     <string name="cache_cleared">Cleared</string>
     <string name="export_all">Export all data</string>
-    <string name="export_all_desc">All conversations and attachments as a .zip (no API key)</string>
+    <string name="export_all_desc">All conversations and attachments as a .zip; the API key only if you tick it</string>
     <string name="import_backup">Import backup</string>
     <string name="import_done">Imported %1$d conversations</string>
+    <string name="import_done_key">Imported %1$d conversations and restored the API key</string>
+    <string name="include_key">Include API key</string>
+    <string name="include_key_warning">The key is stored in plain text: anyone with this file can spend your OpenRouter credits. Do not share it or upload it anywhere public.</string>
     <string name="import_failed">Not a valid Olenva backup</string>
     <string name="permissions">Manage permissions</string>
     <string name="permissions_desc">Camera and other permissions live in system settings</string>

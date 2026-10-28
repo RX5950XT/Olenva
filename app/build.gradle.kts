@@ -13,8 +13,8 @@ android {
         applicationId = "app.olenva"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
     }
 
     // OpenCV's native lib is 24 MB (arm64) / 59 MB (x86_64): ship one APK per ABI instead of a fat one.
@@ -27,13 +27,27 @@ android {
         }
     }
 
+    // The release key lives outside the repo; path and password come from the environment.
+    // Without them (e.g. a fresh clone) release builds fall back to the debug key so they still install.
+    val keystore = System.getenv("OLENVA_KEYSTORE")?.let(::file)?.takeIf { it.isFile }
+    signingConfigs {
+        if (keystore != null) create("release") {
+            storeFile = keystore
+            storePassword = System.getenv("OLENVA_KEYSTORE_PASSWORD")
+            keyAlias = System.getenv("OLENVA_KEY_ALIAS") ?: "olenva"
+            keyPassword = System.getenv("OLENVA_KEYSTORE_PASSWORD")   // PKCS12: key and store share one password
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-            // shortcut: signed with the debug key so it installs locally; add a release keystore before publishing
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (keystore != null) signingConfigs.getByName("release") else {
+                logger.warn("OLENVA_KEYSTORE not set: release APK is signed with the debug key")
+                signingConfigs.getByName("debug")
+            }
         }
     }
     buildFeatures { compose = true }

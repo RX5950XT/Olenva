@@ -18,5 +18,7 @@
 - 震動：所有點擊經 `ui/Haptics.kt` 的 `haptic {}`／`hapticToggle {}`，有段位的滑桿每跨一格 `View.tick()`，掃描頁放進輸入框 `View.confirm()`；WebView 內按鈕由 `chat.js` 呼叫 `Android.haptic()`。新按鈕請沿用；只包在最底層的元件，否則會震兩次。快門保留自己的拍照震動（受「拍攝時震動回饋」控制），其餘跟系統觸碰回饋開關。
 - 思考強度與輸出上限：`AppSettings.reasoning` 只有 low／medium／high（預設 high，舊值 default／none 讀取時轉 high），模型支援 reasoning 就一律送 `reasoning.effort`。`max_tokens` 一律送模型的 `top_provider.max_completion_tokens`：OpenRouter 對 Claude 等「只吃思考長度」的模型把 effort 換算成 max_tokens 的比例（高 80%），上限太小會把回答擠掉。代價是餘額很低時 OpenRouter 可能以「付不起最長回覆」拒絕（402）（2026-10-29）。
 - 模型選單：只列 `created` 在 92 天內、支援圖片輸入、`supported_parameters` 含 reasoning 與 tools、上下文 ≥128K、輸出含 text 且不含 image、id 不以 `:batch` 結尾的模型（2026-10-28 起，「支援圖片」篩選鈕已拿掉）；依 id 前綴分組，主流開發商依 `LAB_ORDER` 排前，其餘 A→Z 收在「其他開發商」摺疊區（預設收起，搜尋時自動展開）。自訂 ID、收藏不受這些限制；「最近使用」已移除（2026-10-28）。
-- 未完成：P2 全部；多頁掃描中途被系統殺掉時，尚未加入輸入框的頁面不會恢復；release 仍用 debug key 簽名（GitHub Releases 的 APK 也是，換正式 keystore 後舊版需先解除安裝）。
-- 日常使用裝 release（`assembleRelease`，R8＋baseline profile）：冷啟動 ~0.3 s，debug ~1.2 s。兩者同簽章，可直接覆蓋安裝、保留資料。
+- 未完成：P2 全部；多頁掃描中途被系統殺掉時，尚未加入輸入框的頁面不會恢復；GitHub 上的 v1.0.0 是 debug key 簽名，之後的版本改用正式金鑰，從 v1.0.0 升級需先解除安裝。
+- 日常使用裝 release（`assembleRelease`，R8＋baseline profile）：冷啟動 ~0.3 s，debug ~1.2 s。
+- 備份：`Backup.writeZip(includeKey)` 只在「匯出全部資料」對話框勾選時把 API Key 明文寫進 `olenva-backup.json` 的 `apiKey`；單一對話的匯出永遠不含。匯入時金鑰視為不可信輸入（去空白、長度 10～512、不含空白才收），會覆蓋目前的金鑰。設定（主題、字體、預設模型等）不在備份裡（2026-10-29）。
+- 簽名（2026-10-29）：正式金鑰在 `%USERPROFILE%\.keystores\olenva-release.jks`（PKCS12、RSA 4096、alias `olenva`），路徑與密碼放在 Windows 使用者環境變數 `OLENVA_KEYSTORE`／`OLENVA_KEYSTORE_PASSWORD`／`OLENVA_KEY_ALIAS`，`app/build.gradle.kts` 讀取；沒設定就退回 debug key 並警告。金鑰檔與密碼不在倉庫裡，弄丟就無法再發可覆蓋安裝的更新。正式金鑰簽的 release 與 debug 版簽名不同，不能互相覆蓋安裝。

@@ -226,9 +226,12 @@
     <string name="clear_cache_desc">移除沒被任何對話使用的暫存圖片</string>
     <string name="cache_cleared">已清理</string>
     <string name="export_all">匯出全部資料</string>
-    <string name="export_all_desc">所有對話與附件打包成 .zip（不含 API Key）</string>
+    <string name="export_all_desc">所有對話與附件打包成 .zip；勾選才包含 API Key</string>
     <string name="import_backup">匯入備份</string>
     <string name="import_done">已匯入 %1$d 段對話</string>
+    <string name="import_done_key">已匯入 %1$d 段對話，API Key 已還原</string>
+    <string name="include_key">包含 API Key</string>
+    <string name="include_key_warning">金鑰以明文存在檔案裡，拿到這個檔案的人就能花你的 OpenRouter 額度。不要分享或上傳到公開的地方。</string>
     <string name="import_failed">不是有效的 Olenva 備份檔</string>
     <string name="permissions">管理權限</string>
     <string name="permissions_desc">相機等權限可在系統設定中調整</string>
