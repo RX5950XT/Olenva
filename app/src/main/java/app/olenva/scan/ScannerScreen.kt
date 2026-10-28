@@ -3,12 +3,14 @@ package app.olenva.scan
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.MediaActionSound
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Log
 import android.view.HapticFeedbackConstants
+import android.view.OrientationEventListener
+import android.view.Surface
+import androidx.activity.compose.LocalActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -76,6 +78,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -100,6 +103,7 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import app.olenva.MainActivity
 import app.olenva.R
 import app.olenva.container
 import app.olenva.ui.DarkSystemBars
@@ -110,6 +114,7 @@ import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
+import kotlin.math.abs
 import java.util.concurrent.Executors
 
 private val Ink = Color(0xFF14120F)
@@ -123,6 +128,7 @@ private val Guide = Color(0xFFB9CDE6)
 @Composable
 fun ScannerScreen(
     settings: AppSettings,
+    active: Boolean,
     onDone: (List<Attachment>) -> Unit,
     onClose: () -> Unit,
     onEditPage: (Attachment, (Attachment?) -> Unit) -> Unit,
@@ -141,7 +147,7 @@ fun ScannerScreen(
     DarkSystemBars()
     Surface(color = Ink, contentColor = Paper, modifier = Modifier.fillMaxSize()) {
         when {
-            granted -> CameraContent(settings, onDone, onClose, onEditPage)
+            granted -> CameraContent(settings, active, onDone, onClose, onEditPage)
             denied -> PermissionDenied(onClose)
             else -> Box(Modifier.fillMaxSize())
         }
@@ -171,6 +177,7 @@ private fun PermissionDenied(onClose: () -> Unit) {
 @Composable
 private fun CameraContent(
     settings: AppSettings,
+    active: Boolean,
     onDone: (List<Attachment>) -> Unit,
     onClose: () -> Unit,
     onEditPage: (Attachment, (Attachment?) -> Unit) -> Unit,
@@ -194,7 +201,8 @@ private fun CameraContent(
     var confirmDiscard by remember { mutableStateOf(false) }
     var retakeIndex by remember { mutableStateOf<Int?>(null) }
     val pages = remember { mutableStateListOf<Attachment>() }
-    val sound = remember { MediaActionSound() }
+    var tilt by remember { mutableIntStateOf(0) }   // which edge of the phone points up, as a clockwise turn
+    var focusedAt by remember { mutableStateOf<Offset?>(null) }
     val executor = remember { Executors.newSingleThreadExecutor() }
     val captureFailed = stringResource(R.string.scan_capture_failed)
 
@@ -206,7 +214,8 @@ private fun CameraContent(
     }
     val imageCapture = remember(orientation) {
         ImageCapture.Builder()
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            // Quality mode re-runs a full autofocus scan per shot (~1.7 s); the preview already keeps the page in focus.
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
             .setResolutionSelector(ratio43())
             .build()
     }
@@ -216,20 +225,25 @@ private fun CameraContent(
         if (settings.haptics) {
             view.performHapticFeedback(if (Build.VERSION.SDK_INT >= 30) HapticFeedbackConstants.CONFIRM else HapticFeedbackConstants.VIRTUAL_KEY)
         }
-        if (settings.shutterSound) sound.play(MediaActionSound.SHUTTER_CLICK)
+        // The frame is upright for the screen; a phone held sideways with auto-rotate off needs a further turn.
+        val turn = (tilt + surfaceDegrees(imageCapture.targetRotation)) % 360
         processing++
+        val started = System.currentTimeMillis()
         imageCapture.takePicture(executor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
+                Log.d("Scanner", "captured in ${System.currentTimeMillis() - started} ms, turn $turn")
                 val upright = try {
                     image.toBitmap().rotate(image.imageInfo.rotationDegrees)
                 } finally {
                     image.close()
                 }
-                analyzer.paused = false
+                // A single page closes the scanner once processed: leave the CPU to processing instead of tracking.
+                analyzer.paused = !multi
                 scope.launch {
                     try {
                         val mode = if (settings.autoEnhance) "auto" else "original"
-                        val a = pipeline.fromCapture(upright, hint, settings.autoCrop, mode)
+                        val a = pipeline.fromCapture(upright, hint, settings.autoCrop, mode, turn)
+                        Log.d("Scanner", "processed in ${System.currentTimeMillis() - started} ms, rotation ${a.rotation}")
                         val idx = retakeIndex
                         when {
                             idx != null && idx < pages.size -> {
@@ -243,6 +257,7 @@ private fun CameraContent(
                     } catch (e: Exception) {
                         Log.e("Scanner", "processing failed", e)
                         error = captureFailed
+                        analyzer.paused = false
                     }
                     processing--
                 }
@@ -257,9 +272,28 @@ private fun CameraContent(
         })
     }
 
+    // Focus on the page as soon as it shows up or moves, rather than wherever continuous AF settles.
+    fun focusOn(q: Quad?) {
+        if (q == null) { focusedAt = null; return }
+        val c = Offset((q[0] + q[2] + q[4] + q[6]) / 4, (q[1] + q[3] + q[5] + q[7]) / 4)
+        val last = focusedAt
+        if (last != null && abs(last.x - c.x) < 0.1f && abs(last.y - c.y) < 0.1f) return
+        val cam = camera ?: return
+        if (previewView.width == 0) return
+        focusedAt = c
+        val point = previewView.meteringPointFactory.createPoint(c.x * previewView.width, c.y * previewView.height)
+        cam.cameraControl.startFocusAndMetering(FocusMeteringAction.Builder(point).build())
+    }
+
+    fun shoot() {
+        if (processing > 0 && !multi) return
+        analyzer.disarm(analyzer.currentSignature())
+        capture(if (settings.autoCrop) analyzer.lastQuad() else null)
+    }
+
     analyzer = remember {
         DocAnalyzer(
-            onFrame = { f -> scope.launch { frame = f } },
+            onFrame = { f -> scope.launch { frame = f; focusOn(f.quad) } },
             onTrigger = { q -> scope.launch { capture(q) } },
         )
     }
@@ -297,11 +331,22 @@ private fun CameraContent(
         }
     }
     DisposableEffect(Unit) {
+        val listener = object : OrientationEventListener(context) {
+            // Lying flat reports UNKNOWN; keep the last real reading then.
+            override fun onOrientationChanged(deg: Int) { if (deg != ORIENTATION_UNKNOWN) tilt = (deg + 45) / 90 % 4 * 90 }
+        }
+        listener.enable()
         onDispose {
+            listener.disable()
             runCatching { ProcessCameraProvider.getInstance(context).get().unbindAll() }
             executor.shutdown()
-            sound.release()
         }
+    }
+    val activity = LocalActivity.current as? MainActivity
+    val currentShoot by rememberUpdatedState(::shoot)
+    DisposableEffect(activity, active) {
+        activity?.volumeShutter = if (active) ({ currentShoot() }) else null
+        onDispose { activity?.volumeShutter = null }
     }
 
     BackHandler { if (pages.isNotEmpty()) confirmDiscard = true else onClose() }
@@ -378,10 +423,7 @@ private fun CameraContent(
                     )
                 }
             }
-            Shutter(busy = processing > 0 && !multi) {
-                analyzer.disarm(analyzer.currentSignature())
-                capture(if (settings.autoCrop) analyzer.lastQuad() else null)
-            }
+            Shutter(busy = processing > 0 && !multi, onClick = ::shoot)
             Box(Modifier.weight(1f), contentAlignment = Alignment.CenterEnd) {
                 if (pages.isNotEmpty()) {
                     Button(
@@ -420,6 +462,13 @@ private fun CameraContent(
             },
         )
     }
+}
+
+private fun surfaceDegrees(rotation: Int) = when (rotation) {
+    Surface.ROTATION_90 -> 90
+    Surface.ROTATION_180 -> 180
+    Surface.ROTATION_270 -> 270
+    else -> 0
 }
 
 private fun ratio43() = ResolutionSelector.Builder()

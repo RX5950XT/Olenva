@@ -40,7 +40,6 @@ data class AppSettings(
     val autoEnhance: Boolean = true,
     val multiPage: Boolean = false,
     val haptics: Boolean = true,
-    val shutterSound: Boolean = false,
 )
 
 private val Context.dataStore by preferencesDataStore("settings")
@@ -67,7 +66,6 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         val autoEnhance = booleanPreferencesKey("autoEnhance")
         val multiPage = booleanPreferencesKey("multiPage")
         val haptics = booleanPreferencesKey("haptics")
-        val shutterSound = booleanPreferencesKey("shutterSound")
     }
 
     private fun Preferences.toSettings() = AppSettings().let { d ->
@@ -92,7 +90,6 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             autoEnhance = this[K.autoEnhance] ?: d.autoEnhance,
             multiPage = this[K.multiPage] ?: d.multiPage,
             haptics = this[K.haptics] ?: d.haptics,
-            shutterSound = this[K.shutterSound] ?: d.shutterSound,
         )
     }
 
@@ -105,9 +102,10 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
         context.dataStore.data.map { it.toSettings() }.stateIn(scope, SharingStarted.Eagerly, initial)
 
     init {
-        // Drop what older versions stored for retired settings (recent models, per-page enhance mode).
+        // Drop what older versions stored for retired settings (recent models, per-page enhance mode, shutter sound).
         scope.launch {
-            context.dataStore.edit { p -> listOf("recents", "enhanceMode").forEach { p.remove(stringPreferencesKey(it)) } }
+            context.dataStore.edit { p -> listOf("recents", "enhanceMode").forEach { p.remove(stringPreferencesKey(it)) }
+                p.remove(booleanPreferencesKey("shutterSound")) }
         }
     }
 
@@ -134,7 +132,6 @@ class SettingsStore(private val context: Context, scope: CoroutineScope) {
             p[K.autoEnhance] = s.autoEnhance
             p[K.multiPage] = s.multiPage
             p[K.haptics] = s.haptics
-            p[K.shutterSound] = s.shutterSound
         }
     }
 }

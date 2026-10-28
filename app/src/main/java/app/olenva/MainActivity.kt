@@ -3,6 +3,7 @@ package app.olenva
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
+import android.view.KeyEvent
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -53,6 +54,18 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : AppCompatActivity() {
     private val vm: ChatViewModel by viewModels()
+
+    /** Set while the scanner is in front: the volume keys work as its shutter. */
+    var volumeShutter: (() -> Unit)? = null
+
+    override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
+        val shutter = volumeShutter
+        if (shutter != null && (keyCode == KeyEvent.KEYCODE_VOLUME_DOWN || keyCode == KeyEvent.KEYCODE_VOLUME_UP)) {
+            if (event.repeatCount == 0) shutter()
+            return true
+        }
+        return super.onKeyDown(keyCode, event)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         enableEdgeToEdge()
@@ -155,6 +168,7 @@ private fun Root(vm: ChatViewModel) {
     if (scannerOpen) {
         ScannerScreen(
             settings = settings,
+            active = editor == null,
             onDone = { pages -> vm.addAttachments(pages); scannerOpen = false },
             onClose = { scannerOpen = false },
             onEditPage = { a, cb -> editor = EditorTarget(a, true, cb) },

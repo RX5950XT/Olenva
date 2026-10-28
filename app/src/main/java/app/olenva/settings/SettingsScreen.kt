@@ -135,7 +135,6 @@ fun SettingsScreen(onClose: () -> Unit, onPickDefaultModel: () -> Unit, onDataCl
                 ToggleRow(R.string.cam_enhance, R.string.cam_enhance_desc, s.autoEnhance) { v -> update { it.copy(autoEnhance = v) } }
                 ToggleRow(R.string.cam_multi, R.string.cam_multi_desc, s.multiPage) { v -> update { it.copy(multiPage = v) } }
                 ToggleRow(R.string.cam_haptics, null, s.haptics) { v -> update { it.copy(haptics = v) } }
-                ToggleRow(R.string.cam_sound, R.string.cam_sound_desc, s.shutterSound) { v -> update { it.copy(shutterSound = v) } }
 
                 // --- Data ---
                 Section(R.string.sec_data)

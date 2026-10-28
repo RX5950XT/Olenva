@@ -133,7 +133,7 @@ class DocAnalyzer(
         if (!auto) return ScanFrame(quad, status = ScanStatus.DETECTED)
 
         val moved = history.maxOf { QuadTracker.diff(it.second, quad) }
-        val steady = moved < 0.025f && now - history.first().first >= 300
+        val steady = moved < 0.025f && now - history.first().first >= 200
         if (!steady) {
             stableSince = 0
             return ScanFrame(quad, status = ScanStatus.DETECTED)
@@ -143,7 +143,7 @@ class DocAnalyzer(
             return ScanFrame(quad, status = ScanStatus.BLURRY)
         }
         if (stableSince == 0L) stableSince = now
-        val progress = ((now - stableSince) / 500f).coerceIn(0f, 1f)
+        val progress = ((now - stableSince) / 300f).coerceIn(0f, 1f)
         if (progress >= 1f) {
             disarm(DocDetector.signature(small, quad))
             stableSince = 0

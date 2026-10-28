@@ -50,11 +50,6 @@
             <meta-data android:name="autoStoreLocales" android:value="true" />
         </service>
 
-        <!-- Ask Play services to fetch the on-device OCR model at install time (used to auto-orient scans). -->
-        <meta-data
-            android:name="com.google.mlkit.vision.DEPENDENCIES"
-            android:value="ocr_chinese" />
-
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.files"

@@ -2,77 +2,63 @@ package app.olenva.scan
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.util.Log
-import com.google.android.gms.common.moduleinstall.ModuleInstall
-import com.google.android.gms.common.moduleinstall.ModuleInstallRequest
-import com.google.mlkit.vision.common.InputImage
-import com.google.mlkit.vision.text.Text
-import com.google.mlkit.vision.text.TextRecognition
-import com.google.mlkit.vision.text.chinese.ChineseTextRecognizerOptions
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.tasks.await
+import org.opencv.android.Utils
+import org.opencv.core.Core
+import org.opencv.core.CvType
+import org.opencv.core.Mat
+import org.opencv.core.MatOfByte
+import org.opencv.core.Scalar
+import org.opencv.core.Size
+import org.opencv.dnn.Dnn
+import org.opencv.dnn.Net
+import org.opencv.imgproc.Imgproc
 
 /**
- * Finds which way a page's text faces with on-device OCR (Chinese model, which also reads Latin).
- * ML Kit reads rotated text as-is and reports each line's angle, so one pass is enough: every line votes
- * for the quarter-turn that would make it level, weighted by how much confident text it holds.
- * Returns the clockwise rotation that makes the page upright (0 when unsure or textless),
- * or null when OCR could not run (model still downloading, no Play services) so the caller can retry later.
+ * Which way is up on a cropped page. PaddleOCR's document orientation classifier (PP-LCNet_x1_0_doc_ori, Apache-2.0,
+ * see third_party/PP-LCNet_doc_ori) looks at the page layout, so it also gets handwriting right, where OCR line angles
+ * flipped handwritten math upside down. ~60 ms per page on a Pixel 6a, most of it copying the bitmap.
  */
 object Orientation {
-    private val recognizer by lazy { TextRecognition.getClient(ChineseTextRecognizerOptions.Builder().build()) }
+    private const val MODEL = "doc_ori_lcnet.onnx"
+    private const val IN = 224.0
+    // Pages score ≥ 0.89 for their real direction; a desk photo that wasn't cropped still scores up to ~0.78.
+    private const val MIN_CONFIDENCE = 0.8f
+    private val LABELS = intArrayOf(0, 90, 180, 270)   // clockwise turn the page has in the image
+    @Volatile private var net: Net? = null
 
-    /** Asks Play services to fetch the OCR model now, so the first scan doesn't miss out. */
-    fun prewarm(context: Context) {
-        ModuleInstall.getClient(context)
-            .installModules(ModuleInstallRequest.newBuilder().addApi(recognizer).build())
-            .addOnFailureListener { Log.w("Orientation", "OCR model install request failed: ${it.javaClass.simpleName}") }
+    fun load(context: Context) {
+        val bytes = context.assets.open(MODEL).use { it.readBytes() }
+        net = Dnn.readNetFromONNX(MatOfByte(*bytes))
     }
 
-    suspend fun detect(page: Bitmap): Int? = try {
-        val text = recognizer.process(InputImage.fromBitmap(page.scaledTo(1024), 0)).await()
-        val votes = mutableMapOf<Int, Double>()
-        text.textBlocks.forEach { b ->
-            b.lines.forEach { l -> votes.merge(correctionFor(l.angle), weight(l), Double::plus) }
-        }
-        Log.d("Orientation", "votes=$votes")
-        pick(votes)
-    } catch (e: CancellationException) {
-        throw e
-    } catch (e: Exception) {
-        // OCR model not downloaded yet / Play services unavailable: leave the page as shot.
-        Log.w("Orientation", "detection skipped: ${e.javaClass.simpleName}")
-        null
+    /** Clockwise quarter-turn that makes [page] upright, or null while the model loads or when it isn't sure (blank page, photo). */
+    @Synchronized fun detect(page: Bitmap): Int? {
+        val n = net ?: return null
+        val rgba = Mat()
+        Utils.bitmapToMat(page, rgba)
+        val x = Mat()
+        // The model was trained on whole pages squashed to a square, not on a centre crop.
+        Imgproc.resize(rgba, x, Size(IN, IN), 0.0, 0.0, Imgproc.INTER_AREA)
+        rgba.release()
+        Imgproc.cvtColor(x, x, Imgproc.COLOR_RGBA2RGB)
+        x.convertTo(x, CvType.CV_32FC3, 1 / 255.0)
+        Core.subtract(x, Scalar(0.485, 0.456, 0.406), x)
+        Core.divide(x, Scalar(0.229, 0.224, 0.225), x)
+        val blob = Dnn.blobFromImage(x)
+        x.release()
+        n.setInput(blob)
+        val out = n.forward()
+        blob.release()
+        val probs = FloatArray(4)
+        out.reshape(1, 1).get(0, 0, probs)
+        out.release()
+        return pick(probs)
     }
-
-    /** Clockwise quarter-turn that levels a line drawn at [angle] degrees (clockwise positive). */
-    fun correctionFor(angle: Float): Int = Math.floorMod(-Math.round(angle / 90f) * 90, 360)
 
     /** Pure decision rule, kept separate so it can be unit-tested. */
-    fun pick(votes: Map<Int, Double>): Int {
-        val total = votes.values.sum()
-        if (total < MIN_TEXT) return 0                       // a photo or a nearly blank page
-        val (best, w) = votes.maxByOrNull { it.value } ?: return 0
-        return if (w / total >= DOMINANCE) best else 0       // mixed directions: leave it alone
+    fun pick(probs: FloatArray): Int? {
+        val best = probs.indices.maxBy { probs[it] }
+        if (probs[best] < MIN_CONFIDENCE) return null
+        return (360 - LABELS[best]) % 360
     }
-
-    private fun weight(l: Text.Line): Double = l.elements.sumOf { e ->
-        val chars = e.text.count { !it.isWhitespace() }
-        // Confidence is 0 on some backends; then count characters alone. Low-confidence reads are garbage
-        // (handwritten math comes back as gibberish with a bogus 180° angle) and must not turn the page.
-        when {
-            e.confidence <= 0f -> chars * 0.5
-            e.confidence >= MIN_CONFIDENCE -> chars * e.confidence.toDouble()
-            else -> 0.0
-        }
-    }
-
-    private fun Bitmap.scaledTo(maxSide: Int): Bitmap {
-        val s = maxSide.toFloat() / maxOf(width, height)
-        return if (s >= 1f) this else Bitmap.createScaledBitmap(this, (width * s).toInt(), (height * s).toInt(), true)
-    }
-
-    private const val MIN_TEXT = 12.0
-    private const val DOMINANCE = 0.6
-    private const val MIN_CONFIDENCE = 0.5f
 }

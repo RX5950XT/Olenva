@@ -225,8 +225,6 @@
     <string name="cam_multi">Multi-page by default</string>
     <string name="cam_multi_desc">Capture several pages into one message</string>
     <string name="cam_haptics">Vibrate on capture</string>
-    <string name="cam_sound">Shutter sound</string>
-    <string name="cam_sound_desc">Some regions force it on</string>
     <string name="storage_used">Storage used: %1$s</string>
     <string name="clear_cache">Clear cache</string>
     <string name="clear_cache_desc">Remove temporary images no conversation uses</string>

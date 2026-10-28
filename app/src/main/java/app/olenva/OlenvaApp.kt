@@ -33,9 +33,9 @@ class OlenvaApp : Application() {
         container = AppContainer(this)
         container.scope.launch { container.dao.markInterrupted() }
         System.loadLibrary("opencv_java4")
-        Orientation.prewarm(this)
         container.scope.launch {
             runCatching { DocDetector.load(this@OlenvaApp) }.onFailure { Log.e("OlenvaApp", "document model failed to load", it) }
+            runCatching { Orientation.load(this@OlenvaApp) }.onFailure { Log.e("OlenvaApp", "orientation model failed to load", it) }
         }
     }
 }

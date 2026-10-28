@@ -38,7 +38,8 @@ android {
     }
     buildFeatures { compose = true }
     androidResources { localeFilters += listOf("en", "zh-rTW") }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    // DebugProbesKt.bin only serves the coroutines debugger.
+    packaging { resources.excludes += listOf("/META-INF/{AL2.0,LGPL2.1}", "DebugProbesKt.bin") }
 }
 
 ksp { arg("room.schemaLocation", "$projectDir/schemas") }
@@ -53,7 +54,6 @@ dependencies {
     implementation(libs.androidx.exifinterface)
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
-    implementation(libs.compose.ui.tooling.preview)
     implementation(libs.compose.material3)
     implementation(libs.compose.icons)
     implementation(libs.camera.camera2)
@@ -67,8 +67,6 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.opencv)
-    implementation(libs.mlkit.ocr.chinese)
-    implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.coil.compose)
     testImplementation(libs.junit)
 }

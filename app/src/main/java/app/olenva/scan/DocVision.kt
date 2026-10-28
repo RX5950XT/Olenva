@@ -31,11 +31,16 @@ object DocDetector {
     private const val IN = 256.0
     private const val HM = 128
     private const val PEAK = 0.3f
+    private const val THREADS = 4
     @Volatile private var net: Net? = null
 
     /** Loads the corner model (DocAligner, see third_party/DocAligner). Until it is ready, nothing is detected. */
     fun load(context: Context) {
         val bytes = context.assets.open(MODEL).use { it.readBytes() }
+        // Set once, never per call: changing the count rebuilds OpenCV's thread pool, and doing that while the capture
+        // pipeline is mid-filter on another thread crashed the app (SIGSEGV in GaussianBlur). Pixel 6a: 2 threads ≈ 50 ms
+        // per frame, the default 8 ≈ 130 ms (syncing with the little cores dominates).
+        Core.setNumThreads(THREADS)
         net = Dnn.readNetFromONNX(MatOfByte(*bytes))
             // FP16 is ~25% faster on the phone; heatmaps differ by ~0.001, far below the 0.3 peak cut.
             .apply { setPreferableTarget(Dnn.DNN_TARGET_CPU_FP16) }
@@ -53,9 +58,7 @@ object DocDetector {
         val blob = Dnn.blobFromImage(input, 1 / 255.0)
         input.release()
         n.setInput(blob)
-        // Measured on Pixel 6a: 2 threads ≈ 50 ms idle / 78 ms while previewing, the default 8 ≈ 130 / 100 ms (syncing with the little cores dominates).
-        Core.setNumThreads(2)
-        val out = try { n.forward() } finally { Core.setNumThreads(-1) }
+        val out = n.forward()
         blob.release()
         val hm = FloatArray(4 * HM * HM)
         out.reshape(1, intArrayOf(1, hm.size)).run { get(0, 0, hm); release() }
@@ -143,6 +146,7 @@ object DocDetector {
 
 object DocProcessor {
     const val MAX_SIDE = 3200
+    private const val DEAD_ZONE = 2.0
 
     fun detectFull(bmp: Bitmap): Quad? {
         val rgba = Mat()
@@ -153,6 +157,22 @@ object DocProcessor {
         val scale = 900.0 / max(gray.cols(), gray.rows())
         if (scale < 1) Imgproc.resize(gray, gray, Size(), scale, scale, Imgproc.INTER_AREA)
         return DocDetector.detect(gray).also { gray.release() }
+    }
+
+    /** [EdgeSnap] on a 1600 px grayscale copy: fine enough for a sub-percent edge, cheap enough to run per shot. */
+    fun snapEdges(bmp: Bitmap, q: Quad): Quad {
+        val rgba = Mat()
+        Utils.bitmapToMat(bmp, rgba)
+        val gray = Mat()
+        Imgproc.cvtColor(rgba, gray, Imgproc.COLOR_RGBA2GRAY)
+        rgba.release()
+        val scale = 1600.0 / max(gray.cols(), gray.rows())
+        if (scale < 1) Imgproc.resize(gray, gray, Size(), scale, scale, Imgproc.INTER_AREA)
+        Imgproc.GaussianBlur(gray, gray, Size(0.0, 0.0), 1.5)   // paper grain and JPEG noise are not edges
+        gray.convertTo(gray, CvType.CV_32F)
+        val px = FloatArray(gray.total().toInt())
+        gray.get(0, 0, px)
+        return EdgeSnap.snap(px, gray.cols(), gray.rows(), q).also { gray.release() }
     }
 
     fun warp(bmp: Bitmap, q: Quad): Bitmap {
@@ -204,15 +224,16 @@ object DocProcessor {
         // Fine background tracking follows shadows and paper creases; filled areas are still kept.
         val l = normalizeIllumination(ch[0], 30)
         ch[0].release()
+        val lit = l.clone()
 
-        // Every other mode is "auto": levels and paper colour adapt per page and per region, so coloured ink keeps
-        // its colour while plain black ink and paper come out neutral.
+        // Every other mode is "auto": levels adapt per page and per region; ink keeps its colour, paper comes out neutral white.
         autoLevels(l)
-        unsharp(l, 0.6)
+        unsharp(l, 0.3)
         // Chroma noise lives in a/b; smoothing it there leaves stroke detail (in L) untouched.
         Imgproc.GaussianBlur(ch[1], ch[1], Size(5.0, 5.0), 0.0)
         Imgproc.GaussianBlur(ch[2], ch[2], Size(5.0, 5.0), 0.0)
-        whitenPaper(l, ch[1], ch[2])
+        recolor(lit, l, ch[1], ch[2])
+        lit.release()
         val out = Mat()
         Core.merge(listOf(l, ch[1], ch[2]), out)
         Imgproc.cvtColor(out, out, Imgproc.COLOR_Lab2RGB)
@@ -286,13 +307,16 @@ object DocProcessor {
     /**
      * Paper to pure white and ink to black. The white point sits just below the paper's own noise (cleaner background on
      * grainy paper, faint strokes kept on clean paper); the black point follows the ink nearby, because writing far
-     * from the lens in a low-angle shot is blurrier and greyer than the rest. Gamma 2 deepens pencil and pen.
+     * from the lens in a low-angle shot is blurrier and greyer than the rest. The gamma also follows the ink nearby (see
+     * [inkGamma]).
      * The local black only applies where ink sits on paper nearby: in a shadow or blank area it would stretch paper
      * grain into speckles.
      */
     private fun autoLevels(m: Mat) {
         val med = percentile(m, 50.0)
-        val sigma = max((med - percentile(m, 25.0)) / 0.674, 1.0)
+        // Paper noise from paper pixels only: on a dense page the plain 25th percentile lands on stroke edges, the white
+        // point drops far below the paper, and thin or faint strokes (far from the lens) are cut to white.
+        val sigma = max((med - percentile(m, 25.0, from = med - 20)) / 0.674, 1.0)
         val white = (med - 3 * sigma).coerceIn(225.0, 250.0)
         val globalBlack = min(percentile(m, 0.5), 120.0)
         val k = max(15, max(m.cols(), m.rows()) / 40) or 1
@@ -305,13 +329,15 @@ object DocProcessor {
         Imgproc.erode(small, ink, win)
         Imgproc.dilate(small, paper, win)
         small.release()
-        // gate = clamp((paper − ink − 40) / 40): 0 with no contrast nearby, 1 around real strokes.
+        // gate = clamp((paper − ink − 15) / 25): 0 with no contrast nearby, 1 around real strokes. It opens already at
+        // faint strokes (out-of-focus print, pencil); blank paper varies by under ~10, so its grain stays white.
         val gate = Mat()
         Core.subtract(paper, ink, gate)
-        gate.convertTo(gate, -1, 1 / 40.0, -1.0)
+        gate.convertTo(gate, -1, 1 / 25.0, -0.6)
         Core.min(gate, Scalar(1.0), gate)
         Core.max(gate, Scalar(0.0), gate)
         paper.release()
+        val gamma = inkGamma(ink, k, m.size())
         // local black = globalBlack + gate · (clamp(ink, globalBlack, 190) − globalBlack)
         Core.max(ink, Scalar(globalBlack), ink)
         Core.min(ink, Scalar(190.0), ink)
@@ -331,29 +357,64 @@ object DocProcessor {
         black.release()
         Core.min(t, Scalar(1.0), t)
         Core.max(t, Scalar(0.0), t)
-        Core.pow(t, 2.0, t)
+        // t^gamma per pixel
+        Core.max(t, Scalar(1e-6), t)
+        Core.log(t, t)
+        Core.multiply(t, gamma, t)
+        Core.exp(t, t)
+        gamma.release()
         t.convertTo(m, CvType.CV_8U, 255.0)
         t.release()
     }
 
-    /** Neutral white page: remove the paper's colour cast, then fade chroma out on near-white so only ink keeps colour. */
-    private fun whitenPaper(l: Mat, a: Mat, b: Mat) {
+    /**
+     * Gamma 1 where the ink nearby is dark, rising to 2 where it is faint. A steep curve deepens pencil and out-of-focus
+     * print, but on dense dark print it also fills the light gaps inside many-stroke characters, merging their strokes.
+     */
+    private fun inkGamma(ink: Mat, k: Int, size: Size): Mat {
+        val g = Mat()
+        ink.convertTo(g, -1, 1 / 80.0, -100 / 80.0)   // (ink − 100) / 80
+        Core.min(g, Scalar(1.0), g)
+        Core.max(g, Scalar(0.0), g)
+        Core.add(g, Scalar(1.0), g)
+        Imgproc.GaussianBlur(g, g, Size(0.0, 0.0), k / 8.0)
+        val out = Mat()
+        Imgproc.resize(g, out, size, 0.0, 0.0, Imgproc.INTER_LINEAR)
+        g.release()
+        return out
+    }
+
+    /**
+     * Neutral white page, ink in its own colour. A thin or faint stroke is ink blended with paper, so its colour is weak
+     * (blue pen reads as light grey-blue); once levels darken it, the same weak colour looks grey. Scaling chroma by how
+     * much darker the pixel got, (255 − L after) / (255 − L before), puts back the pen's colour, and fades the paper's
+     * cast to zero where it turns white. A small dead zone keeps black ink from picking up a tint from chroma noise.
+     */
+    private fun recolor(before: Mat, after: Mat, a: Mat, b: Mat) {
         val paper = Mat()
-        Core.compare(l, Scalar(250.0), paper, Core.CMP_GE)
-        val keep = Mat()
-        l.convertTo(keep, CvType.CV_32F, -1.2 / 80, 1.2 * 250 / 80)   // 1.2 · clamp((250 − L) / 80)
-        Core.min(keep, Scalar(1.2), keep)
-        Core.max(keep, Scalar(0.0), keep)
+        Core.compare(after, Scalar(250.0), paper, Core.CMP_GE)
+        val gain = Mat(); val room = Mat()
+        after.convertTo(gain, CvType.CV_32F, -1.0, 255.0)
+        before.convertTo(room, CvType.CV_32F, -1.0, 255.0)
+        Core.max(room, Scalar(8.0), room)
+        Core.divide(gain, room, gain)
+        Core.min(gain, Scalar(4.0), gain)
+        room.release()
         val hasPaper = Core.countNonZero(paper) > 0
         for (c in listOf(a, b)) {
             val cast = if (hasPaper) Core.mean(c, paper).`val`[0] - 128 else 0.0
-            val f = Mat()
+            val f = Mat(); val neg = Mat()
             c.convertTo(f, CvType.CV_32F, 1.0, -128 - cast)
-            Core.multiply(f, keep, f)
+            Core.add(f, Scalar(DEAD_ZONE), neg)
+            Core.min(neg, Scalar(0.0), neg)
+            Core.subtract(f, Scalar(DEAD_ZONE), f)
+            Core.max(f, Scalar(0.0), f)
+            Core.add(f, neg, f)
+            Core.multiply(f, gain, f)
             f.convertTo(c, CvType.CV_8U, 1.0, 128.0)
-            f.release()
+            f.release(); neg.release()
         }
-        paper.release(); keep.release()
+        paper.release(); gain.release()
     }
 
     private fun unsharp(m: Mat, amount: Double) {
@@ -363,12 +424,14 @@ object DocProcessor {
         blur.release()
     }
 
-    private fun percentile(m: Mat, pct: Double): Double {
+    /** [pct] percentile of the pixels of [m] at or above [from]. */
+    private fun percentile(m: Mat, pct: Double, from: Double = 0.0): Double {
         val hist = Mat()
         Imgproc.calcHist(listOf(m), MatOfInt(0), Mat(), hist, MatOfInt(256), MatOfFloat(0f, 256f))
-        val total = m.total().toDouble()
+        val start = from.toInt().coerceIn(0, 255)
+        val total = (start until 256).sumOf { hist.get(it, 0)[0] }
         var acc = 0.0
-        for (i in 0 until 256) {
+        for (i in start until 256) {
             acc += hist.get(i, 0)[0]
             if (acc >= total * pct / 100) { hist.release(); return i.toDouble() }
         }

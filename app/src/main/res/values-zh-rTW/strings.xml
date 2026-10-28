@@ -225,8 +225,6 @@
     <string name="cam_multi">預設多頁模式</string>
     <string name="cam_multi_desc">連續拍攝多頁，一次加入同一則訊息</string>
     <string name="cam_haptics">拍攝時震動回饋</string>
-    <string name="cam_sound">快門音</string>
-    <string name="cam_sound_desc">部分地區的裝置會強制播放</string>
     <string name="storage_used">已使用空間：%1$s</string>
     <string name="clear_cache">清理快取</string>
     <string name="clear_cache_desc">移除沒被任何對話使用的暫存圖片</string>
