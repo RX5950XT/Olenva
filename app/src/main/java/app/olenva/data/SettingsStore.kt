@@ -1,7 +1,6 @@
 package app.olenva.data
 
 import android.content.Context
-import app.olenva.settings.isValidModelId
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
@@ -45,6 +44,8 @@ data class AppSettings(
     val haptics: Boolean = true,
 )
 
+private fun isStorableModelId(id: String) = id.isNotBlank() && '\n' !in id && '\r' !in id
+
 /** Settings read from a backup file are untrusted: anything out of range falls back to the default. */
 fun AppSettings.sanitized(): AppSettings {
     val d = AppSettings()
@@ -53,9 +54,9 @@ fun AppSettings.sanitized(): AppSettings {
         fontScale = fontScale.takeIf { it in 0.8f..1.6f } ?: d.fontScale,
         startup = startup.takeIf { it in listOf("new", "last") } ?: d.startup,
         lastConversationId = null,
-        defaultModel = defaultModel.takeIf(::isValidModelId) ?: d.defaultModel,
-        favorites = favorites.filter(::isValidModelId),
-        customModels = customModels.filter(::isValidModelId),
+        defaultModel = defaultModel.takeIf(::isStorableModelId) ?: d.defaultModel,
+        favorites = favorites.filter(::isStorableModelId),
+        customModels = customModels.filter(::isStorableModelId),
         temperature = temperature?.takeIf { it in 0f..2f },
         topP = topP?.takeIf { it in 0f..1f },
         reasoning = reasoning.takeIf { it in EFFORTS } ?: d.reasoning,

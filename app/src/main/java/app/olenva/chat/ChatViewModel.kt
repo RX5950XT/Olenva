@@ -1,6 +1,8 @@
 package app.olenva.chat
 
 import android.app.Application
+import android.content.Intent
+import androidx.core.content.ContextCompat
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -234,7 +236,7 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
             _events.tryEmit(UiEvent.ModelLacksImages(info.name))
             return
         }
-        viewModelScope.launch {
+        startGeneration {
             val now = System.currentTimeMillis()
             val cid = _conversationId.value ?: createConversation(d, modelId, now)
             // The scan originals were only needed for re-editing before sending.
@@ -272,13 +274,13 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun regenerate(messageId: String) {
         if (_generating.value) return
-        viewModelScope.launch {
-            val m = dao.message(messageId) ?: return@launch
+        startGeneration {
+            val m = dao.message(messageId) ?: return@startGeneration
             val cid = m.conversationId
             val all = dao.messages(cid)
             // Regenerating an assistant reply drops it and everything after; on a user message, keep it.
             val cut = if (m.role == Role.ASSISTANT) all.indexOfFirst { it.id == m.id } - 1 else all.indexOfFirst { it.id == m.id }
-            if (cut < 0) return@launch
+            if (cut < 0) return@startGeneration
             dao.deleteMessagesAfter(cid, all[cut].createdAt)
             generate(cid, currentModelId.value)
         }
@@ -286,8 +288,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
 
     fun editAndResend(messageId: String, text: String) {
         if (_generating.value) return
-        viewModelScope.launch {
-            val m = dao.message(messageId) ?: return@launch
+        startGeneration {
+            val m = dao.message(messageId) ?: return@startGeneration
             dao.upsertMessage(m.copy(content = text.trim()))
             dao.deleteMessagesAfter(m.conversationId, m.createdAt)
             generate(m.conversationId, currentModelId.value)
@@ -303,71 +305,90 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private fun generate(cid: String, modelId: String) {
-        val key = apiKey.value ?: run { _events.tryEmit(UiEvent.NeedApiKey); return }
+    private fun startGeneration(work: suspend () -> Unit) {
         _generating.value = true
-        job = viewModelScope.launch {
-            val history = dao.messages(cid)
-            val start = maxOf(System.currentTimeMillis(), (history.lastOrNull()?.createdAt ?: 0) + 1)
-            val base = MessageEntity(
-                id = UUID.randomUUID().toString(), conversationId = cid, role = Role.ASSISTANT, content = "",
-                modelId = modelId, status = Status.STREAMING, createdAt = start,
-            )
-            dao.upsertMessage(base)
-            streaming.value = base
-            val content = StringBuilder()
-            val reasoning = StringBuilder()
-            var usage: StreamEvent.Usage? = null
-            var finish: String? = null
-            var result: MessageEntity
-            try {
-                val body = buildRequest(history, modelId)
-                var lastPush = 0L
-                var lastSave = System.currentTimeMillis()
-                c.openRouter.stream(key, body).collect { ev ->
-                    when (ev) {
-                        is StreamEvent.Delta -> { content.append(ev.content); reasoning.append(ev.reasoning) }
-                        is StreamEvent.Usage -> usage = ev
-                        is StreamEvent.Finish -> finish = ev.reason
-                    }
-                    val t = System.currentTimeMillis()
-                    if (t - lastPush > 50) {
-                        lastPush = t
-                        streaming.value = base.copy(content = content.toString(), reasoning = reasoning.toString())
-                    }
-                    if (t - lastSave > 2000) {   // checkpoint so a crash keeps most of the answer
-                        lastSave = t
-                        dao.upsertMessage(base.copy(content = content.toString(), reasoning = reasoning.toString()))
-                    }
-                }
-                result = base.copy(content = content.toString(), reasoning = reasoning.toString(), status = Status.DONE)
-                if (content.isBlank()) {
-                    result = result.copy(status = Status.ERROR, error = res.getString(R.string.err_empty))
-                }
-            } catch (e: CancellationException) {
-                val stopped = base.copy(content = content.toString(), reasoning = reasoning.toString(), status = Status.STOPPED)
-                withContext(NonCancellable) {
-                    // The conversation may have been deleted mid-stream; then there is nothing to keep.
-                    runCatching { dao.upsertMessage(stopped.withUsage(usage, finish)) }
-                    streaming.value = null
-                    _generating.value = false
-                }
-                throw e
-            } catch (e: ApiException) {
-                Log.w("Chat", "request failed: ${e.kind}")
-                result = base.copy(content = content.toString(), reasoning = reasoning.toString(), status = Status.ERROR, error = errorText(e))
-            } catch (e: AttachmentException) {
-                result = base.copy(status = Status.ERROR, error = res.getString(R.string.err_attachment_read, e.name))
-            } catch (e: Exception) {
-                Log.e("Chat", "unexpected failure", e)
-                result = base.copy(content = content.toString(), status = Status.ERROR, error = res.getString(R.string.err_unknown))
-            }
-            dao.upsertMessage(result.withUsage(usage, finish))
-            streaming.value = null
+        try {
+            ContextCompat.startForegroundService(getApplication(), Intent(getApplication(), GenerationService::class.java))
+        } catch (e: RuntimeException) {
+            Log.e("Chat", "could not start background service", e)
             _generating.value = false
-            touchConversation(cid)
-            if (result.status == Status.DONE) maybeTitle(cid, key, modelId)
+            _events.tryEmit(UiEvent.Toast(res.getString(R.string.err_background)))
+            return
         }
+        job = viewModelScope.launch {
+            try {
+                work()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.e("Chat", "generation failed before completion", e)
+                _events.tryEmit(UiEvent.Toast(res.getString(R.string.err_unknown)))
+            } finally {
+                _generating.value = false
+            }
+        }
+    }
+
+    private suspend fun generate(cid: String, modelId: String) {
+        val key = apiKey.value ?: run { _events.tryEmit(UiEvent.NeedApiKey); return }
+        val history = dao.messages(cid)
+        val start = maxOf(System.currentTimeMillis(), (history.lastOrNull()?.createdAt ?: 0) + 1)
+        val base = MessageEntity(
+            id = UUID.randomUUID().toString(), conversationId = cid, role = Role.ASSISTANT, content = "",
+            modelId = modelId, status = Status.STREAMING, createdAt = start,
+        )
+        dao.upsertMessage(base)
+        streaming.value = base
+        val content = StringBuilder()
+        val reasoning = StringBuilder()
+        var usage: StreamEvent.Usage? = null
+        var finish: String? = null
+        var result: MessageEntity
+        try {
+            val body = buildRequest(history, modelId)
+            var lastPush = 0L
+            var lastSave = System.currentTimeMillis()
+            c.openRouter.stream(key, body).collect { ev ->
+                when (ev) {
+                    is StreamEvent.Delta -> { content.append(ev.content); reasoning.append(ev.reasoning) }
+                    is StreamEvent.Usage -> usage = ev
+                    is StreamEvent.Finish -> finish = ev.reason
+                }
+                val t = System.currentTimeMillis()
+                if (t - lastPush > 50) {
+                    lastPush = t
+                    streaming.value = base.copy(content = content.toString(), reasoning = reasoning.toString())
+                }
+                if (t - lastSave > 2000) {   // checkpoint so a crash keeps most of the answer
+                    lastSave = t
+                    dao.upsertMessage(base.copy(content = content.toString(), reasoning = reasoning.toString()))
+                }
+            }
+            result = base.copy(content = content.toString(), reasoning = reasoning.toString(), status = Status.DONE)
+            if (content.isBlank()) {
+                result = result.copy(status = Status.ERROR, error = res.getString(R.string.err_empty))
+            }
+        } catch (e: CancellationException) {
+            val stopped = base.copy(content = content.toString(), reasoning = reasoning.toString(), status = Status.STOPPED)
+            withContext(NonCancellable) {
+                // The conversation may have been deleted mid-stream; then there is nothing to keep.
+                runCatching { dao.upsertMessage(stopped.withUsage(usage, finish)) }
+                streaming.value = null
+            }
+            throw e
+        } catch (e: ApiException) {
+            Log.w("Chat", "request failed: ${e.kind}")
+            result = base.copy(content = content.toString(), reasoning = reasoning.toString(), status = Status.ERROR, error = errorText(e))
+        } catch (e: AttachmentException) {
+            result = base.copy(status = Status.ERROR, error = res.getString(R.string.err_attachment_read, e.name))
+        } catch (e: Exception) {
+            Log.e("Chat", "unexpected failure", e)
+            result = base.copy(content = content.toString(), status = Status.ERROR, error = res.getString(R.string.err_unknown))
+        }
+        dao.upsertMessage(result.withUsage(usage, finish))
+        streaming.value = null
+        touchConversation(cid)
+        if (result.status == Status.DONE) maybeTitle(cid, key, modelId)
     }
 
     private fun MessageEntity.withUsage(u: StreamEvent.Usage?, finish: String?) = copy(
@@ -494,7 +515,8 @@ class ChatViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun deleteConversation(id: String) = viewModelScope.launch {
-        if (_conversationId.value == id) { job?.cancel(); _conversationId.value = null; loadDraft(null) }
+        if (streaming.value?.conversationId == id) job?.cancel()
+        if (_conversationId.value == id) { _conversationId.value = null; loadDraft(null) }
         val atts = dao.messages(id).flatMap { it.attachmentList } + (dao.draft(id)?.let { Attachment.decode(it.attachments) } ?: emptyList())
         dao.deleteConversation(id)
         dao.deleteDraft(id)

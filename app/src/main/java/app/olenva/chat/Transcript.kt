@@ -151,6 +151,7 @@ private fun toJson(context: Context, list: List<MessageEntity>, showUsage: Boole
         put("content", m.content)
         put("reasoning", m.reasoning)
         put("status", m.status)
+        put("createdAt", m.createdAt)
         m.error?.let { put("error", it) }
         notice(context, m)?.let { put("notice", it) }
         if (m.role == "assistant" && m.status != Status.STREAMING) put("meta", meta(context, m, showUsage, lookup))

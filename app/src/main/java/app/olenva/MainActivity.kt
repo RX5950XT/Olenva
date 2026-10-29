@@ -10,7 +10,6 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.activity.viewModels
 import androidx.appcompat.app.AppCompatActivity
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.padding
@@ -55,7 +54,7 @@ import androidx.compose.ui.platform.LocalView
 import app.olenva.ui.confirm
 
 class MainActivity : AppCompatActivity() {
-    private val vm: ChatViewModel by viewModels()
+    private val vm: ChatViewModel get() = container.chat
 
     /** Set while the scanner is in front: the volume keys work as its shutter. */
     var volumeShutter: (() -> Unit)? = null

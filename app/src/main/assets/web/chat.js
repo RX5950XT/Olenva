@@ -46,12 +46,13 @@
         '<div class="actions">' + btn('copy', 'copy', S.copy) + btn('edit', 'edit', S.edit) + btn('more', 'more', S.more) + '</div></article>';
     }
     var h = '<article class="msg ai" id="m-' + m.id + '" data-id="' + m.id + '">';
-    if (m.reasoning) {
-      var thinking = streaming && !m.content;
-      h += '<details class="think"' + (thinking ? ' open' : '') + '><summary>' + esc(thinking ? S.thinking : S.thoughts) + '</summary><div class="think-body md">' + R.render(m.reasoning, thinking) + '</div></details>';
+    var thinking = streaming && !m.content;
+    if (m.reasoning || thinking) {
+      h += '<details class="think"><summary>' + (thinking ? '<span class="spinner" aria-hidden="true"></span>' : '') +
+        esc(thinking ? S.thinking : S.thoughts) + (thinking ? ' <span class="think-time" data-start="' + Number(m.createdAt) + '"></span>' : '') +
+        '</summary><div class="think-body md">' + R.render(m.reasoning || '', thinking) + '</div></details>';
     }
     if (m.content) h += '<div class="md">' + R.render(m.content, streaming) + '</div>';
-    else if (streaming && !m.reasoning) h += '<p class="waiting"><span></span><span></span><span></span></p>';
     if (m.notice) h += '<p class="notice">' + esc(m.notice) + '</p>';
     if (m.status === 'error') {
       h += '<div class="error" role="alert"><p>' + esc(m.error || '') + '</p><button type="button" class="retry" data-act="retry">' + esc(S.retry) + '</button></div>';
@@ -62,6 +63,13 @@
     }
     return h + '</article>';
   }
+
+  function updateThinkingTime() {
+    list.querySelectorAll('.think-time').forEach(function (el) {
+      el.textContent = Math.max(0, Math.floor((Date.now() - Number(el.dataset.start)) / 1000)) + 's';
+    });
+  }
+  setInterval(updateThinkingTime, 1000);
 
   function atBottom() {
     return window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 48;
@@ -81,7 +89,10 @@
         var fresh = tpl.content.firstElementChild;
         if (el) {
           window.morphdom(el, fresh, {
-            onBeforeElUpdated: function (from, to) { return !from.isEqualNode(to); }
+            onBeforeElUpdated: function (from, to) {
+              if (from.matches('details.think')) to.open = from.open;
+              return !from.isEqualNode(to);
+            }
           });
         } else {
           el = fresh;
@@ -99,10 +110,11 @@
     forceScroll = false;
     updateJump();
     markOverflow();
+    updateThinkingTime();
   }
 
   // Wide formulas, tables and code scroll sideways; fade the cut edge so it is clear there is more.
-  var SCROLLERS = '.math-block, .table-wrap, .code pre, .math-raw.block';
+  var SCROLLERS = '.math-inline, .math-block, .table-wrap, .md pre, .math-raw.block';
   function edgeState(el) {
     var more = el.scrollWidth - el.clientWidth > 2;
     el.classList.toggle('more-right', more && el.scrollLeft + el.clientWidth < el.scrollWidth - 2);

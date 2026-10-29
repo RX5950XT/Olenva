@@ -13,8 +13,8 @@ android {
         applicationId = "app.olenva"
         minSdk = 26
         targetSdk = 37
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.1.0"
     }
 
     // OpenCV's native lib is 24 MB (arm64) / 59 MB (x86_64): ship one APK per ABI instead of a fat one.

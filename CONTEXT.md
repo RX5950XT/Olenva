@@ -23,3 +23,6 @@
 - 日常使用裝 release（`assembleRelease`，R8＋baseline profile）：冷啟動 ~0.3 s，debug ~1.2 s。
 - 備份：`Backup.writeZip(includeKey)` 只在「匯出全部資料」對話框勾選時把 API Key 明文寫進 `olenva-backup.json` 的 `apiKey`；單一對話的匯出永遠不含。匯入時金鑰視為不可信輸入（去空白、長度 10～512、不含空白才收），會覆蓋目前的金鑰。「匯出全部資料」也帶 `settings`（`AppSettings` 整份，不含 `lastConversationId`），匯入時先過 `AppSettings.sanitized()`（範圍外的值退回預設）再覆蓋目前設定（2026-10-29）。
 - 簽名（2026-10-29）：正式金鑰在 `%USERPROFILE%\.keystores\olenva-release.jks`（PKCS12、RSA 4096、alias `olenva`），路徑與密碼放在 Windows 使用者環境變數 `OLENVA_KEYSTORE`／`OLENVA_KEYSTORE_PASSWORD`／`OLENVA_KEY_ALIAS`，`app/build.gradle.kts` 讀取；沒設定就退回 debug key 並警告。金鑰檔與密碼不在倉庫裡，弄丟就無法再發可覆蓋安裝的更新。正式金鑰簽的 release 與 debug 版簽名不同，不能互相覆蓋安裝。
+- 背景對話：`ChatViewModel` 由 `AppContainer` 保留，不隨 Activity 銷毀；送出／重生／編輯重送時啟動 `GenerationService`（dataSync 前景服務），完成或停止後結束。系統強制停止或殺死程序仍會中斷，重啟時既有 checkpoint 標為 stopped。Android 15 起 dataSync 背景執行受系統時間上限約束。
+- 訊息複製：使用者訊息若含圖片，複製鈕以 `FileProvider` URI 複製圖片，多張依序加入；「更多 → 複製全文」可複製文字。輸入框用 Compose `contentReceiver` 接收圖片並匯入附件；實際貼到其他 App 的內容取決於對方支援情況。
+- 訊息橫向捲動：行內／區塊公式、程式碼、表格各自捲動；`chat.js` 的 SCROLLERS 也包含這些元素，避免橫滑時誤開側欄。

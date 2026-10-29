@@ -53,6 +53,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
@@ -195,28 +197,23 @@ fun ModelPicker(
 private fun AddModelDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
     var text by remember { mutableStateOf("") }
     val id = text.trim()
-    val valid = isValidModelId(id)
+    val fieldDescription = stringResource(R.string.add_model_id)
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.add_model_id)) },
         text = {
             OutlinedTextField(
                 value = text,
-                onValueChange = { text = it },
-                placeholder = { Text("openai/gpt-5.5") },
-                supportingText = { Text(stringResource(R.string.model_id_help)) },
-                isError = id.isNotEmpty() && !valid,
+                onValueChange = { text = it.replace("\n", "").replace("\r", "") },
+                modifier = Modifier.semantics { contentDescription = fieldDescription },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(autoCorrectEnabled = false, keyboardType = KeyboardType.Uri),
             )
         },
-        confirmButton = { TextButton(onClick = haptic { onAdd(id) }, enabled = valid) { Text(stringResource(R.string.add)) } },
+        confirmButton = { TextButton(onClick = haptic { onAdd(id) }, enabled = id.isNotEmpty()) { Text(stringResource(R.string.add)) } },
         dismissButton = { TextButton(onClick = haptic(onDismiss)) { Text(stringResource(R.string.cancel)) } },
     )
 }
-
-/** OpenRouter ids look like `lab/model`, optionally with a `~` alias prefix or a `:variant` suffix. */
-fun isValidModelId(id: String) = Regex("~?[A-Za-z0-9][A-Za-z0-9._-]*/[A-Za-z0-9][A-Za-z0-9._:~-]*").matches(id)
 
 private const val RECENT_SECONDS = 92L * 24 * 3600
 private const val MIN_CONTEXT = 128_000

@@ -13,11 +13,18 @@ class SettingsBackupTest {
     }
 
     @Test
+    fun keepsPresetIdsWhenRestoring() {
+        val ids = listOf("@preset/my-preset", "openai/gpt-5@preset/my-preset", "custom id")
+        val settings = AppSettings(defaultModel = ids[0], favorites = ids, customModels = ids)
+        assertEquals(settings, settings.sanitized())
+    }
+
+    @Test
     fun replacesOutOfRangeValuesWithDefaults() {
         val d = AppSettings()
         val s = AppSettings(
-            theme = "neon", fontScale = 9f, startup = "x", lastConversationId = "c1", defaultModel = "bad id",
-            favorites = listOf("a/b", "no slash", "x\ny/z"), temperature = 5f, topP = -1f, reasoning = "max",
+            theme = "neon", fontScale = 9f, startup = "x", lastConversationId = "c1", defaultModel = " ",
+            favorites = listOf("a/b", "", "x\ny/z"), temperature = 5f, topP = -1f, reasoning = "max",
         ).sanitized()
         assertEquals(d.copy(favorites = listOf("a/b")), s)
     }

@@ -2,10 +2,7 @@ package app.olenva
 
 import app.olenva.net.ModelInfo
 import app.olenva.settings.groupByLab
-import app.olenva.settings.isValidModelId
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class ModelCatalogTest {
@@ -43,12 +40,4 @@ class ModelCatalogTest {
         assertEquals(listOf("openai/new"), groups[1].second.map { it.id })
     }
 
-    @Test fun modelIdFormat() {
-        assertTrue(isValidModelId("openai/gpt-5.5"))
-        assertTrue(isValidModelId("~deepseek/deepseek-v4-flash-latest"))
-        assertTrue(isValidModelId("meta-llama/llama-4:free"))
-        assertFalse(isValidModelId("gpt-5"))
-        assertFalse(isValidModelId("openai/"))
-        assertFalse(isValidModelId("open ai/gpt"))
-    }
 }

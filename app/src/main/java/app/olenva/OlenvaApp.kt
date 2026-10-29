@@ -4,6 +4,7 @@ import android.app.Application
 import android.content.Context
 import android.util.Log
 import app.olenva.data.AppDatabase
+import app.olenva.chat.ChatViewModel
 import app.olenva.data.AttachmentStore
 import app.olenva.data.Backup
 import app.olenva.scan.DocDetector
@@ -44,6 +45,7 @@ val Context.container get() = (applicationContext as OlenvaApp).container
 
 class AppContainer(context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+    val chat by lazy { ChatViewModel(context.applicationContext as Application) }
     val db = AppDatabase.create(context)
     val dao = db.dao()
     val settings = SettingsStore(context, scope)

@@ -9,7 +9,12 @@ import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.PickVisualMediaRequest
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.content.MediaType
+import androidx.compose.foundation.content.contentReceiver
+import androidx.compose.foundation.content.consume
+import androidx.compose.foundation.content.hasMediaType
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -33,6 +38,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.text.input.rememberTextFieldState
+import androidx.compose.foundation.text.input.setTextAndPlaceCursorAtEnd
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -78,6 +85,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -92,6 +101,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.core.content.FileProvider
 import app.olenva.R
 import app.olenva.container
 import app.olenva.data.Attachment
@@ -103,6 +113,7 @@ import app.olenva.ui.MonoStyle
 import app.olenva.ui.Serif
 import coil3.compose.AsyncImage
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.drop
 import androidx.compose.material3.Slider
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -138,6 +149,25 @@ fun Context.copyToClipboard(text: String, label: String = "Olenva") {
     getSystemService(ClipboardManager::class.java).setPrimaryClip(ClipData.newPlainText(label, text))
     // Android 13+ shows its own clipboard confirmation.
     if (Build.VERSION.SDK_INT < 33) Toast.makeText(this, R.string.copied, Toast.LENGTH_SHORT).show()
+}
+
+fun Context.copyMessage(message: MessageEntity) {
+    val images = message.attachmentList.filter { it.kind == AttachmentKind.IMAGE }
+    if (images.isEmpty()) { copyToClipboard(message.content); return }
+    try {
+        val uris = images.map { attachment ->
+            val file = container.attachments.file(attachment.path)
+            require(file.isFile)
+            FileProvider.getUriForFile(this, "$packageName.files", file)
+        }
+        val clip = ClipData.newUri(contentResolver, "Olenva", uris.first())
+        uris.drop(1).forEach { clip.addItem(contentResolver, ClipData.Item(it)) }
+        getSystemService(ClipboardManager::class.java).setPrimaryClip(clip)
+        if (Build.VERSION.SDK_INT < 33) Toast.makeText(this, R.string.copied, Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        android.util.Log.w("Chat", "could not copy image", e)
+        Toast.makeText(this, R.string.err_copy_image, Toast.LENGTH_SHORT).show()
+    }
 }
 
 fun Context.shareText(text: String) {
@@ -198,7 +228,7 @@ fun ChatScreen(vm: ChatViewModel, nav: ChatNavigator) {
             override fun onAction(action: String, messageId: String) {
                 val m = vm.messages.value.firstOrNull { it.id == messageId } ?: return
                 when (action) {
-                    "copy" -> context.copyToClipboard(m.content)
+                    "copy" -> context.copyMessage(m)
                     "regen", "retry" -> vm.regenerate(m.id)
                     "edit" -> editing = m
                     "more" -> sheetFor = m
@@ -364,6 +394,7 @@ private fun EmptyState(hasKey: Boolean, onSetKey: () -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun Composer(
     draft: Draft,
@@ -380,6 +411,15 @@ private fun Composer(
 ) {
     val reading = LocalReading.current
     val colors = MaterialTheme.colorScheme
+    val textState = rememberTextFieldState(draft.text)
+    val latestText by rememberUpdatedState(draft.text)
+    val latestOnText by rememberUpdatedState(onText)
+    LaunchedEffect(textState) {
+        snapshotFlow { textState.text.toString() }.drop(1).collect { if (it != latestText) latestOnText(it) }
+    }
+    LaunchedEffect(draft.text) {
+        if (textState.text.toString() != draft.text) textState.setTextAndPlaceCursorAtEnd(draft.text)
+    }
     var attachMenu by remember { mutableStateOf(false) }
     val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(10)) { onPicked(it) }
     val pickFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { onPicked(it) }
@@ -411,11 +451,18 @@ private fun Composer(
                     Text(stringResource(R.string.input_hint), style = style.copy(color = colors.onSurfaceVariant.copy(alpha = .75f)))
                 }
                 BasicTextField(
-                    value = draft.text,
-                    onValueChange = onText,
+                    state = textState,
                     textStyle = style,
                     cursorBrush = SolidColor(colors.primary),
-                    modifier = Modifier.fillMaxWidth().heightIn(min = 24.dp, max = 180.dp),
+                    modifier = Modifier.contentReceiver { content ->
+                        if (!content.hasMediaType(MediaType.Image)) return@contentReceiver content
+                        val images = mutableListOf<android.net.Uri>()
+                        val remaining = content.consume { item ->
+                            item.uri?.let { images.add(it); true } ?: false
+                        }
+                        if (images.isNotEmpty()) onPicked(images)
+                        remaining
+                    }.fillMaxWidth().heightIn(min = 24.dp, max = 180.dp),
                 )
             }
             Row(Modifier.fillMaxWidth().padding(start = 6.dp, end = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
